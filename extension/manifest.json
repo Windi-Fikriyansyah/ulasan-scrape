@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Ulasan Tokped Bridge",
+  "version": "2.0.0",
+  "description": "Pasang sekali. Semua kendali pengambilan ulasan Tokopedia ada di dashboard web.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["https://www.tokopedia.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Buka dashboard Ulasan Tokped" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tokopedia.com/*"],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.tokopedia.com/*"],
+      "js": ["scraper.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
