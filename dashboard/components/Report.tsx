@@ -37,6 +37,28 @@ function Avatar({ src, name }: { src?: string; name: string }) {
   );
 }
 
+function RatingStars({ rating }: { rating: number }) {
+  const r = Math.max(0, Math.min(5, Math.round(rating || 0)));
+  return (
+    <div className={`score s${r}`} role="img" aria-label={`Rating ${rating || "?"} dari 5`}>
+      <span className="stars-row" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((s) => (
+          <svg
+            key={s}
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            className={`star ${s <= r ? "filled" : "empty"}`}
+          >
+            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+          </svg>
+        ))}
+      </span>
+      <span className="score-num">{rating ? `${rating} / 5` : "?"}</span>
+    </div>
+  );
+}
+
 function Diagnosis({ sample }: { sample: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -108,7 +130,7 @@ function Progress({ job }: { job: Job }) {
         <ul className="feed">
           {latest.map((r, i) => (
             <li key={i}>
-              <b>{r.rating || "?"}</b>
+              <b>{r.rating ? "★".repeat(Math.max(1, Math.min(5, Math.round(r.rating)))) : "?"}</b>
               <span>{r.review || "Tanpa teks ulasan"}</span>
             </li>
           ))}
@@ -272,9 +294,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
         <ol className="list">
           {shown.slice(0, limit).map((r, i) => (
             <li className="rv" key={`${r.name}-${r.date}-${i}`}>
-              <div className={`score s${r.rating}`} role="img" aria-label={`Rating ${r.rating} dari 5`}>
-                {r.rating || "?"}
-              </div>
+              <RatingStars rating={r.rating} />
               <div>
                 <div className="rv-head">
                   <span className="who">

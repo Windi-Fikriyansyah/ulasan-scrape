@@ -255,7 +255,7 @@ h1, h2, h3 { margin: 0; line-height: 1; }
 .run .small { margin: 10px 0 0; }
 .feed { list-style: none; margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); }
 .feed li { display: flex; gap: 12px; padding: 2px 0; }
-.feed b { flex: none; width: 1.2em; font-stretch: 62%; font-weight: 900; font-size: 18px; }
+.feed b { flex: none; min-width: 1.2em; font-stretch: 62%; font-weight: 900; font-size: 15px; color: var(--tape); }
 .feed span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
 
 /* ---------- Sebaran rating ---------- */
@@ -301,24 +301,39 @@ h1, h2, h3 { margin: 0; line-height: 1; }
 .count { margin: 4px 0 0; }
 
 .list { list-style: none; margin: 0; padding: 0; }
-.rv { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.rv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
 .score {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  background: var(--line);
-  color: var(--ink);
-  font-stretch: 62%;
-  font-weight: 900;
-  font-size: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 82px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  align-self: flex-start;
 }
-.score.s5, .score.s4, .score.s1 { color: #fff; }
-.score.s5 { background: var(--r5); }
-.score.s4 { background: var(--r4); }
-.score.s3 { background: var(--r3); }
-.score.s2 { background: var(--r2); }
-.score.s1 { background: var(--r1); }
+.score .stars-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.score .star {
+  display: block;
+}
+.score .star.filled {
+  fill: var(--tape);
+}
+.score .star.empty {
+  fill: var(--line);
+}
+.score .score-num {
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-soft);
+}
 
 .rv-head { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: baseline; }
 .rv-head .date { margin-left: auto; color: var(--ink-soft); font-size: 13px; }
