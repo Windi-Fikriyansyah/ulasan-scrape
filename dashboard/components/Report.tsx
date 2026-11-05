@@ -10,7 +10,6 @@ import {
   nf0,
   summarize,
   toCsv,
-  topWords,
   type SortKey,
 } from "@/lib/analysis";
 
@@ -79,36 +78,12 @@ function Diagnosis({ sample }: { sample: string }) {
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             })
-            .catch(() => {});
+            .catch(() => { });
         }}
       >
         {copied ? "Tersalin" : "Salin HTML"}
       </button>
     </details>
-  );
-}
-
-function Words({ title, items, tone }: { title: string; items: { word: string; count: number }[]; tone: string }) {
-  const max = items[0]?.count ?? 1;
-  return (
-    <div>
-      <h3>{title}</h3>
-      {items.length === 0 ? (
-        <p className="muted">Belum cukup ulasan untuk dihitung.</p>
-      ) : (
-        <ul className="words-list">
-          {items.map((w) => (
-            <li key={w.word}>
-              <span>{w.word}</span>
-              <span className="bar" aria-hidden="true">
-                <i style={{ width: `${(w.count / max) * 100}%`, background: tone }} />
-              </span>
-              <span className="n">{w.count}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
 
@@ -141,18 +116,15 @@ function Progress({ job }: { job: Job }) {
 }
 
 export default function Report({ job, onDelete }: { job: Job; onDelete: () => void }) {
-  const [rating, setRating] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [photo, setPhoto] = useState(false);
   const [sort, setSort] = useState<SortKey>("asli");
   const [limit, setLimit] = useState(STEP);
 
   const sum = useMemo(() => summarize(job.reviews), [job.reviews]);
-  const good = useMemo(() => topWords(job.reviews.filter((r) => r.rating >= 4)), [job.reviews]);
-  const bad = useMemo(() => topWords(job.reviews.filter((r) => r.rating >= 1 && r.rating <= 3)), [job.reviews]);
   const shown = useMemo(
-    () => filterReviews(job.reviews, { rating, q, photo, sort }),
-    [job.reviews, rating, q, photo, sort]
+      () => filterReviews(job.reviews, { rating: null, q, photo, sort }),
+        [job.reviews, q, photo, sort]
   );
 
   const running = job.status === "running";
@@ -187,41 +159,6 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
           {nf0.format(unrated)} ulasan belum terbaca ratingnya, jadi tidak ikut dihitung di rata-rata. Lihat bagian
           diagnosa di paling bawah.
         </p>
-      )}
-
-      {sum.total > 0 && (
-        <>
-          <div className="tape" aria-hidden="true">
-            {[5, 4, 3, 2, 1].map((r) =>
-              sum.dist[r - 1] > 0 ? (
-                <span key={r} style={{ flexGrow: sum.dist[r - 1], background: `var(--r${r})` }} />
-              ) : null
-            )}
-          </div>
-          <div className="legend" role="group" aria-label="Saring menurut rating">
-            {[5, 4, 3, 2, 1].map((r) => (
-              <button
-                key={r}
-                type="button"
-                className="chip"
-                aria-pressed={rating === r}
-                onClick={() => {
-                  setRating(rating === r ? null : r);
-                  setLimit(STEP);
-                }}
-              >
-                <i className="sw" style={{ background: `var(--r${r})` }} aria-hidden="true" />
-                Bintang {r}
-                <span className="n">{nf0.format(sum.dist[r - 1])}</span>
-              </button>
-            ))}
-          </div>
-
-          <section className="words">
-            <Words title="Sering disebut di ulasan bintang 4 dan 5" items={good} tone="var(--r5)" />
-            <Words title="Sering disebut di ulasan bintang 1 sampai 3" items={bad} tone="var(--r1)" />
-          </section>
-        </>
       )}
 
       <section aria-label="Daftar ulasan">
