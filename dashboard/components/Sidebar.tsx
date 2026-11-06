@@ -1,7 +1,10 @@
 import type { ExtStatus } from "@/lib/bridge";
 
 // Tambah menu baru cukup dengan menambah satu baris di sini.
-export const MENUS = [{ id: "ambil", label: "Ambil reviews" }] as const;
+export const MENUS = [
+  { id: "ambil", label: "Ambil reviews" },
+  { id: "lead", label: "Lead maps" },
+] as const;
 export type MenuId = (typeof MENUS)[number]["id"];
 
 type Props = {

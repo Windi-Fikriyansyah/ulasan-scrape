@@ -8,19 +8,25 @@ export function sendToExtension(msg: Record<string, unknown>) {
   window.postMessage({ source: "tkp-dashboard", ...msg }, window.location.origin);
 }
 
+// Berapa lama tanpa balasan (saat tab terlihat) sebelum dianggap terputus.
+const SILENT_LIMIT_MS = 10000;
+
 export function useExtension(onEvent: (e: ExtEvent) => void) {
   const [status, setStatus] = useState<ExtStatus>("checking");
   const [version, setVersion] = useState<string | null>(null);
-  const lastSeen = useRef(0);
   const handler = useRef(onEvent);
   handler.current = onEvent;
 
   useEffect(() => {
+    const started = Date.now();
+    let lastSeen = 0; // terakhir ada pesan apa pun dari extension
+    let visibleSince = started; // terakhir tab ini kembali terlihat
+
     const listen = (e: MessageEvent) => {
       if (e.source !== window) return;
       const d = e.data;
       if (!d || d.source !== "tkp-extension") return;
-      lastSeen.current = Date.now();
+      lastSeen = Date.now();
       if (d.type === "PONG") {
         setVersion(d.version);
         setStatus("connected");
@@ -30,17 +36,27 @@ export function useExtension(onEvent: (e: ExtEvent) => void) {
     };
     window.addEventListener("message", listen);
 
-    const started = Date.now();
     const ping = () => sendToExtension({ type: "PING" });
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        visibleSince = Date.now();
+        ping();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     ping();
     const pinger = setInterval(ping, 2500);
     const watcher = setInterval(() => {
-      const quiet = Date.now() - (lastSeen.current || started);
-      if (quiet > 7000) setStatus("missing");
+      if (document.visibilityState !== "visible") return;
+      const quiet = Date.now() - Math.max(lastSeen, visibleSince, started);
+      if (quiet > SILENT_LIMIT_MS) setStatus("missing");
     }, 1000);
 
     return () => {
       window.removeEventListener("message", listen);
+      document.removeEventListener("visibilitychange", onVisible);
       clearInterval(pinger);
       clearInterval(watcher);
     };

@@ -34,4 +34,48 @@ export type ExtEvent =
   | { type: "META"; jobId: string; title: string; image?: string; sample?: string }
   | { type: "BATCH"; jobId: string; page: number; reviews: Review[] }
   | { type: "DONE"; jobId: string; stopped: boolean }
-  | { type: "ERROR"; jobId?: string; message: string };
+  | { type: "ERROR"; jobId?: string; message: string }
+  | { type: "LEADS"; jobId: string; found: number; leads: Lead[] };
+
+export type LeadField =
+  | "kategori"
+  | "alamat"
+  | "telepon"
+  | "website"
+  | "rating"
+  | "jumlah_ulasan"
+  | "jam_buka"
+  | "koordinat"
+  | "link_maps"
+  | "status";
+
+export type Lead = {
+  name: string;
+  category?: string;
+  address?: string;
+  phone?: string;
+  website?: string;
+  rating?: number;
+  reviews?: number;
+  hours?: string;
+  lat?: number;
+  lng?: number;
+  mapsUrl?: string;
+  status?: string;
+};
+
+export type LeadJob = {
+  id: string;
+  keyword: string;
+  location: string;
+  url: string;
+  fields: LeadField[];
+  maxResults: number;
+  startedAt: number;
+  finishedAt?: number;
+  status: JobStatus;
+  error?: string;
+  found: number;
+  sample?: string;
+  leads: Lead[];
+};

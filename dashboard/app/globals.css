@@ -401,3 +401,94 @@ h1, h2, h3 { margin: 0; line-height: 1; }
   .tools .field[type="search"] { max-width: none; }
   .lede { font-size: 19px; }
 }
+
+/* ---------- Gaya Lead Maps ---------- */
+.lead-mark {
+  font-size: 30px;
+}
+.lead-fields-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lead-fields-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lead-fields-actions {
+  display: flex;
+  gap: 6px;
+}
+.lead-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lead-fast-note {
+  margin-top: 4px;
+}
+.lead-hint {
+  margin-top: 12px;
+}
+
+.lead-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 18px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  border-radius: 4px;
+}
+.lead-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.lead-table th,
+.lead-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  vertical-align: top;
+}
+.lead-table th:last-child,
+.lead-table td:last-child {
+  border-right: none;
+}
+.lead-table tr:last-child td {
+  border-bottom: none;
+}
+.lead-table th {
+  background: rgba(23, 43, 77, 0.06);
+  font-weight: 700;
+  border-bottom: 2px solid var(--ink);
+  position: sticky;
+  top: 0;
+}
+.lead-table tr:hover td {
+  background: rgba(245, 197, 24, 0.08);
+}
+.lead-col-idx {
+  text-align: center;
+  width: 38px;
+}
+
+@media (max-width: 880px) {
+  .lead-table {
+    font-size: 13px;
+  }
+  .lead-table th,
+  .lead-table td {
+    padding: 6px 8px;
+  }
+}
+

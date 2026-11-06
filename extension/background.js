@@ -83,12 +83,14 @@ async function startJob(cmd, dashTabId) {
       if (u.hostname !== "www.tokopedia.com") throw new Error("bad");
     } else if (market === "shopee") {
       if (u.hostname !== "shopee.co.id") throw new Error("bad");
+    } else if (market === "gmaps") {
+      if (u.hostname !== "www.google.com" || !u.pathname.startsWith("/maps")) throw new Error("bad");
     } else {
       throw new Error("bad");
     }
     url = u.href;
   } catch (_) {
-    const label = market === "shopee" ? "Shopee" : "Tokopedia";
+    const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : "Tokopedia";
     emit(dashTabId, { type: "ERROR", jobId: cmd.jobId, message: `Link itu bukan halaman ${label}.` });
     return;
   }
@@ -96,11 +98,12 @@ async function startJob(cmd, dashTabId) {
   const tab = await chrome.tabs.create({ url, active: false });
   await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id, market });
 
-  const label = market === "shopee" ? "Shopee" : "Tokopedia";
+  const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : "Tokopedia";
   const loaded = await waitForLoad(tab.id);
   if (!loaded) return failJob(`Halaman ${label} tidak selesai dimuat dalam 45 detik.`);
 
   const options = {
+    ...(cmd.options || {}),
     maxPages: clamp(cmd.options && cmd.options.maxPages, 1, 200, 10),
     delay: clamp(cmd.options && cmd.options.delay, 500, 10000, 1200),
   };
@@ -131,6 +134,9 @@ async function handleScrape(msg, senderTabId) {
       break;
     case "batch":
       emit(j.dashTabId, { type: "BATCH", jobId: j.jobId, page: msg.page, reviews: msg.reviews });
+      break;
+    case "leads":
+      emit(j.dashTabId, { type: "LEADS", jobId: j.jobId, found: msg.found, leads: msg.leads });
       break;
     case "done":
       emit(j.dashTabId, { type: "DONE", jobId: j.jobId, stopped: !!msg.stopped });
@@ -169,7 +175,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const j = await getJob();
   if (j && tabId === j.scrapeTabId) {
-    const label = j.market === "shopee" ? "Shopee" : "Tokopedia";
+    const label = j.market === "shopee" ? "Shopee" : j.market === "gmaps" ? "Google Maps" : "Tokopedia";
     emit(j.dashTabId, {
       type: "ERROR",
       jobId: j.jobId,

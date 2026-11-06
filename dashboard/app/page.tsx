@@ -1,17 +1,23 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { ExtEvent, Job, Market } from "@/lib/types";
+import type { ExtEvent, Job, LeadField, LeadJob, Market } from "@/lib/types";
 import { useExtension } from "@/lib/bridge";
 import { listJobs, removeJob, saveJob } from "@/lib/db";
+import { listLeadJobs, removeLeadJob, saveLeadJob } from "@/lib/leads-db";
 import { cleanReview, newId, normalizeProductUrl, normalizeShopeeUrl } from "@/lib/analysis";
+import { buildMapsUrl, validateLeadInput } from "@/lib/leads";
 import Sidebar, { type MenuId } from "@/components/Sidebar";
 import MarketTabs, { MARKETS } from "@/components/MarketTabs";
 import Gate from "@/components/Gate";
 import Capture from "@/components/Capture";
 import Archive from "@/components/Archive";
 import Report from "@/components/Report";
+import LeadCapture from "@/components/LeadCapture";
+import LeadArchive from "@/components/LeadArchive";
+import LeadReport from "@/components/LeadReport";
 
 const marketOf = (j: Job): Market => j.market ?? "tokopedia";
+const ERR_DISCONNECTED = "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.";
 
 export default function Home() {
   const [menu, setMenu] = useState<MenuId>("ambil");
@@ -22,9 +28,20 @@ export default function Home() {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // State untuk Lead Maps
+  const [leadJobs, setLeadJobs] = useState<LeadJob[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [runningLeadId, setRunningLeadId] = useState<string | null>(null);
+  const [leadLoaded, setLeadLoaded] = useState(false);
+  const [leadFormError, setLeadFormError] = useState<string | null>(null);
+
   const jobsRef = useRef<Job[]>([]);
   const runningRef = useRef<string | null>(null);
   const lastSave = useRef(0);
+
+  const leadJobsRef = useRef<LeadJob[]>([]);
+  const runningLeadRef = useRef<string | null>(null);
+  const lastLeadSave = useRef(0);
 
   const commit = (next: Job[]) => {
     jobsRef.current = next;
@@ -33,6 +50,15 @@ export default function Home() {
   const setRunning = (id: string | null) => {
     runningRef.current = id;
     setRunningId(id);
+  };
+
+  const commitLead = (next: LeadJob[]) => {
+    leadJobsRef.current = next;
+    setLeadJobs(next);
+  };
+  const setRunningLead = (id: string | null) => {
+    runningLeadRef.current = id;
+    setRunningLeadId(id);
   };
 
   const patch = (id: string, fn: (j: Job) => Job, forceSave = false) => {
@@ -47,29 +73,122 @@ export default function Home() {
     }
   };
 
+  const patchLead = (id: string, fn: (j: LeadJob) => LeadJob, forceSave = false) => {
+    const cur = leadJobsRef.current.find((j) => j.id === id);
+    if (!cur) return;
+    const updated = fn(cur);
+    commitLead(leadJobsRef.current.map((j) => (j.id === id ? updated : j)));
+    const now = Date.now();
+    if (forceSave || now - lastLeadSave.current > 1500) {
+      lastLeadSave.current = now;
+      saveLeadJob(updated).catch(() => {});
+    }
+  };
+
   const onEvent = (e: ExtEvent) => {
     switch (e.type) {
       case "META":
+        if (leadJobsRef.current.some((j) => j.id === e.jobId)) {
+          patchLead(e.jobId, (j) => ({ ...j, sample: e.sample || j.sample }), true);
+        } else {
+          patch(
+            e.jobId,
+            (j) => ({ ...j, title: e.title || j.title, image: e.image || j.image, sample: e.sample || j.sample }),
+            true
+          );
+        }
+        break;
+      case "BATCH": {
+        const cur = jobsRef.current.find((j) => j.id === e.jobId);
+        const shouldRecover = cur && cur.status === "error" && cur.error === ERR_DISCONNECTED;
+        if (shouldRecover) {
+          setRunning(e.jobId);
+        }
         patch(
           e.jobId,
-          (j) => ({ ...j, title: e.title || j.title, image: e.image || j.image, sample: e.sample || j.sample }),
-          true
+          (j) => ({
+            ...j,
+            status: shouldRecover ? "running" : j.status,
+            error: shouldRecover ? undefined : j.error,
+            finishedAt: shouldRecover ? undefined : j.finishedAt,
+            page: e.page,
+            reviews: [...j.reviews, ...e.reviews.map(cleanReview)],
+          }),
+          Boolean(shouldRecover)
         );
         break;
-      case "BATCH":
-        patch(e.jobId, (j) => ({ ...j, page: e.page, reviews: [...j.reviews, ...e.reviews.map(cleanReview)] }));
+      }
+      case "LEADS": {
+        const cur = leadJobsRef.current.find((j) => j.id === e.jobId);
+        const shouldRecover = cur && cur.status === "error" && cur.error === ERR_DISCONNECTED;
+        if (shouldRecover) {
+          setRunningLead(e.jobId);
+        }
+        patchLead(
+          e.jobId,
+          (j) => {
+            // Scraper sudah membuang duplikat per tempat. Di sini hanya cegah batch ganda
+            // berdasarkan link Maps; nama yang sama (cabang berbeda) tidak dibuang.
+            const existing = new Set(j.leads.map((l) => l.mapsUrl).filter(Boolean));
+            const newLeads = e.leads.filter((l) => !l.mapsUrl || !existing.has(l.mapsUrl));
+            return {
+              ...j,
+              status: shouldRecover ? "running" : j.status,
+              error: shouldRecover ? undefined : j.error,
+              finishedAt: shouldRecover ? undefined : j.finishedAt,
+              found: e.found,
+              leads: [...j.leads, ...newLeads],
+            };
+          },
+          Boolean(shouldRecover)
+        );
         break;
+      }
       case "DONE":
-        patch(e.jobId, (j) => ({ ...j, status: e.stopped ? "stopped" : "done", finishedAt: Date.now() }), true);
-        if (runningRef.current === e.jobId) setRunning(null);
+        if (leadJobsRef.current.some((j) => j.id === e.jobId)) {
+          patchLead(
+            e.jobId,
+            (j) => ({ ...j, status: e.stopped ? "stopped" : "done", error: undefined, finishedAt: Date.now() }),
+            true
+          );
+          if (runningLeadRef.current === e.jobId) setRunningLead(null);
+        } else {
+          patch(
+            e.jobId,
+            (j) => ({ ...j, status: e.stopped ? "stopped" : "done", error: undefined, finishedAt: Date.now() }),
+            true
+          );
+          if (runningRef.current === e.jobId) setRunning(null);
+        }
         break;
       case "ERROR": {
-        const id = e.jobId ?? runningRef.current;
-        if (id) {
-          patch(id, (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }), true);
-          if (runningRef.current === id) setRunning(null);
+        const leadId = e.jobId ?? (runningLeadRef.current || undefined);
+        const revId = e.jobId ?? (runningRef.current || undefined);
+        if (leadId && leadJobsRef.current.some((j) => j.id === leadId)) {
+          patchLead(leadId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }), true);
+          if (runningLeadRef.current === leadId) setRunningLead(null);
+        } else if (revId && jobsRef.current.some((j) => j.id === revId)) {
+          patch(revId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }), true);
+          if (runningRef.current === revId) setRunning(null);
         } else {
-          setFormError(e.message);
+          if (runningLeadRef.current) {
+            patchLead(
+              runningLeadRef.current,
+              (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }),
+              true
+            );
+            setRunningLead(null);
+          } else if (runningRef.current) {
+            patch(
+              runningRef.current,
+              (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }),
+              true
+            );
+            setRunning(null);
+          } else {
+            setFormError(e.message);
+            setLeadFormError(e.message);
+          }
         }
         break;
       }
@@ -78,8 +197,7 @@ export default function Home() {
 
   const ext = useExtension(onEvent);
 
-  // Muat riwayat. Pekerjaan yang masih "berjalan" dari sesi lama ditandai berhenti,
-  // dan ulasan lama dirapikan (avatar yang tercampur di daftar foto dipindahkan).
+  // Muat riwayat ulasan produk
   useEffect(() => {
     listJobs()
       .then((stored) => {
@@ -100,27 +218,66 @@ export default function Home() {
       .finally(() => setLoaded(true));
   }, []);
 
-  // Extension terputus saat pengambilan berjalan.
+  // Muat riwayat Lead Maps
   useEffect(() => {
-    if (ext.status === "missing" && runningRef.current) {
-      const id = runningRef.current;
-      patch(
-        id,
-        (j) => ({
+    listLeadJobs()
+      .then((stored) => {
+        const fixed = stored.map((j) => ({
           ...j,
-          status: "error",
-          error: "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.",
-          finishedAt: Date.now(),
-        }),
-        true
-      );
-      setRunning(null);
+          status: j.status === "running" ? ("stopped" as const) : j.status,
+          finishedAt: j.status === "running" ? (j.finishedAt ?? Date.now()) : j.finishedAt,
+        }));
+        fixed.forEach((j, i) => {
+          if (stored[i].status === "running") saveLeadJob(j).catch(() => {});
+        });
+        commitLead(fixed);
+        if (fixed.length > 0) setSelectedLeadId(fixed[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setLeadLoaded(true));
+  }, []);
+
+  // Extension terputus saat pengambilan berjalan
+  useEffect(() => {
+    if (ext.status === "missing") {
+      if (runningRef.current) {
+        const id = runningRef.current;
+        patch(
+          id,
+          (j) => ({
+            ...j,
+            status: "error",
+            error: ERR_DISCONNECTED,
+            finishedAt: Date.now(),
+          }),
+          true
+        );
+        setRunning(null);
+      }
+      if (runningLeadRef.current) {
+        const id = runningLeadRef.current;
+        patchLead(
+          id,
+          (j) => ({
+            ...j,
+            status: "error",
+            error: ERR_DISCONNECTED,
+            finishedAt: Date.now(),
+          }),
+          true
+        );
+        setRunningLead(null);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ext.status]);
 
   const start = (rawUrl: string, pages: number, delaySec: number) => {
     setFormError(null);
+    if (runningLeadRef.current || runningRef.current) {
+      setFormError("Masih ada pengambilan yang berjalan. Tunggu selesai atau hentikan dulu.");
+      return;
+    }
     const n = normalizeProductUrl(rawUrl);
     if (!n.ok) {
       setFormError(n.message);
@@ -148,6 +305,10 @@ export default function Home() {
 
   const startShopee = (rawUrl: string, pages: number, delaySec: number) => {
     setFormError(null);
+    if (runningLeadRef.current || runningRef.current) {
+      setFormError("Masih ada pengambilan yang berjalan. Tunggu selesai atau hentikan dulu.");
+      return;
+    }
     const n = normalizeShopeeUrl(rawUrl);
     if (!n.ok) {
       setFormError(n.message);
@@ -173,8 +334,52 @@ export default function Home() {
     ext.send({ type: "START", jobId: job.id, market: "shopee", url: n.url, options: { maxPages, delay } });
   };
 
+  const startLead = (keyword: string, location: string, fields: LeadField[], maxResults: number) => {
+    setLeadFormError(null);
+    if (runningRef.current || runningLeadRef.current) {
+      setLeadFormError("Masih ada pengambilan yang berjalan. Tunggu selesai atau hentikan dulu.");
+      return;
+    }
+    const valid = validateLeadInput(keyword, location, fields, maxResults);
+    if (!valid.ok) {
+      setLeadFormError(valid.message);
+      return;
+    }
+    const url = buildMapsUrl(valid.keyword, valid.location);
+    const leadJob: LeadJob = {
+      id: newId(),
+      keyword: valid.keyword,
+      location: valid.location,
+      url,
+      fields,
+      maxResults: valid.maxResults,
+      startedAt: Date.now(),
+      status: "running",
+      found: 0,
+      leads: [],
+    };
+    commitLead([leadJob, ...leadJobsRef.current]);
+    setSelectedLeadId(leadJob.id);
+    setRunningLead(leadJob.id);
+    saveLeadJob(leadJob).catch(() => {});
+    ext.send({
+      type: "START",
+      jobId: leadJob.id,
+      market: "gmaps",
+      url,
+      options: {
+        maxResults: valid.maxResults,
+        fields,
+      },
+    });
+  };
+
   const stop = () => {
     if (runningRef.current) ext.send({ type: "STOP", jobId: runningRef.current });
+  };
+
+  const stopLead = () => {
+    if (runningLeadRef.current) ext.send({ type: "STOP", jobId: runningLeadRef.current });
   };
 
   const changeMarket = (m: Market) => {
@@ -191,8 +396,16 @@ export default function Home() {
     setSelectedId(next.find((j) => marketOf(j) === market)?.id ?? null);
   };
 
+  const removeLead = (id: string) => {
+    removeLeadJob(id).catch(() => {});
+    const next = leadJobsRef.current.filter((j) => j.id !== id);
+    commitLead(next);
+    setSelectedLeadId(next[0]?.id ?? null);
+  };
+
   const marketJobs = jobs.filter((j) => marketOf(j) === market);
   const selected = marketJobs.find((j) => j.id === selectedId) ?? null;
+  const selectedLead = leadJobs.find((j) => j.id === selectedLeadId) ?? null;
 
   return (
     <div className="app">
@@ -209,6 +422,7 @@ export default function Home() {
                 <Capture
                   ready={ext.status === "connected"}
                   running={runningId !== null}
+                  otherRunning={runningLeadId !== null}
                   error={formError}
                   onStart={start}
                   onStop={stop}
@@ -236,6 +450,7 @@ export default function Home() {
                 <Capture
                   ready={ext.status === "connected"}
                   running={runningId !== null}
+                  otherRunning={runningLeadId !== null}
                   error={formError}
                   placeholder="shopee.co.id/nama-produk-i.123.456"
                   onStart={startShopee}
@@ -265,6 +480,45 @@ export default function Home() {
               </div>
             )}
           </>
+        )}
+
+        {menu === "lead" && (
+          <div role="region" aria-label="Lead Google Maps">
+            <h1 className="mark lead-mark" style={{ marginTop: "28px", marginBottom: "26px" }}>
+              Lead maps
+            </h1>
+            {ext.status === "missing" && <Gate />}
+            <LeadCapture
+              ready={ext.status === "connected"}
+              running={runningLeadId !== null}
+              otherRunning={runningId !== null}
+              error={leadFormError}
+              onStart={startLead}
+              onStop={stopLead}
+            />
+            <div className="desk">
+              <LeadArchive
+                jobs={leadJobs}
+                selectedId={selectedLeadId}
+                loaded={leadLoaded}
+                onSelect={setSelectedLeadId}
+              />
+              <main>
+                {selectedLead ? (
+                  <LeadReport key={selectedLead.id} job={selectedLead} onDelete={() => removeLead(selectedLead.id)} />
+                ) : (
+                  <section className="empty">
+                    <h1>Belum ada data tempat usaha</h1>
+                    <p>
+                      Isi kata kunci dan lokasi tempat usaha di kalimat atas, pilih kolom data yang diinginkan, lalu klik
+                      Mulai ambil. Google Maps akan terbuka sebentar di tab latar belakang, dan datanya muncul di halaman
+                      ini secara live.
+                    </p>
+                  </section>
+                )}
+              </main>
+            </div>
+          </div>
         )}
       </div>
     </div>

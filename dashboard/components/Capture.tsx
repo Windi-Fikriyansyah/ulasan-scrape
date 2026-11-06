@@ -4,6 +4,7 @@ import { useState } from "react";
 type Props = {
   ready: boolean;
   running: boolean;
+  otherRunning?: boolean;
   error: string | null;
   placeholder?: string;
   onStart: (url: string, pages: number, delaySec: number) => void;
@@ -13,6 +14,7 @@ type Props = {
 export default function Capture({
   ready,
   running,
+  otherRunning,
   error,
   placeholder = "tokopedia.com/nama-toko/nama-produk",
   onStart,
@@ -27,7 +29,7 @@ export default function Capture({
       className="capture"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!running) onStart(url, pages, delay);
+        if (!running && !otherRunning) onStart(url, pages, delay);
       }}
     >
       <div className="sentence">
@@ -73,12 +75,15 @@ export default function Capture({
             Hentikan
           </button>
         ) : (
-          <button type="submit" className="btn solid" disabled={!ready}>
+          <button type="submit" className="btn solid" disabled={!ready || otherRunning}>
             Mulai ambil
           </button>
         )}
       </div>
       {!ready && !running && <p className="hint">Tombol aktif setelah extension terhubung.</p>}
+      {otherRunning && !running && (
+        <p className="hint">Pengambilan lead Maps sedang berjalan. Tunggu selesai atau hentikan dulu.</p>
+      )}
       {error && (
         <p className="err-line" role="alert">
           {error}

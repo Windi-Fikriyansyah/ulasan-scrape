@@ -47,16 +47,28 @@ Fitur pengambilan ulasan untuk **Shopee** (`shopee.co.id`) sudah aktif dengan al
 
 > **Catatan Penting:** Shopee sering meminta verifikasi bot atau login. Jika muncul pesan error bahwa Shopee meminta login/verifikasi, buka `shopee.co.id` di tab browser biasa, lakukan login dan selesaikan verifikasi, lalu coba ambil ulasan kembali. Jangan lupa untuk **Muat ulang (Reload)** extension di `chrome://extensions` setelah ada perubahan manifest/kode extension.
 
+## Fitur Lead Maps (Google Maps)
+
+Menu baru **Lead maps** di sidebar memungkinkan pengambilan data tempat usaha dari Google Maps secara otomatis:
+1. Klik menu **Lead maps** di sidebar.
+2. Isi **Kata kunci** (contoh: "kedai kopi", "bengkel motor"), **Lokasi** (contoh: "Bandung", "Kemang, Jakarta Selatan"), dan target jumlah tempat (1–200).
+3. Pilih kolom data yang ingin diambil: Kategori, Alamat, Telepon, Website, Rating, Jumlah ulasan, Jam buka, Koordinat, Link Maps, Status. *(Nama tempat usaha selalu diambil)*.
+4. Klik **Mulai ambil**. Extension membuka pencarian Google Maps di tab latar belakang, membaca data, dan mengirimkannya bertahap ke dashboard secara live.
+5. Tab Google Maps akan tertutup otomatis setelah selesai atau bila tombol **Hentikan** ditekan.
+6. Hasil pencarian disimpan di database IndexedDB terpisah (`ulasan-tokped-leads`) agar riwayat ulasan produk tetap aman.
+7. Di halaman laporan, data tempat usaha dapat dicari, disaring berdasarkan ketersediaan nomor telepon / website / rating minimal, diurutkan, serta diekspor ke format CSV dan JSON. Tersedia juga diagnosa HTML untuk memeriksa struktur kartu Google Maps terkini.
+8. **Mode cepat:** Bila hanya memilih kolom dasar yang tertera di kartu atau URL (seperti Kategori, Rating, Jumlah ulasan, Koordinat, Link Maps), scraper bekerja jauh lebih cepat tanpa perlu membuka panel detail tiap tempat.
+
 ## Memakai alamat dashboard lain
 
 Extension hanya menyambung ke `localhost:3000`, `127.0.0.1:3000`, dan `localhost:3001`. Kalau dashboard
 dideploy ke domain lain, tambahkan domain itu di `extension/manifest.json` (bagian `content_scripts` untuk
 `bridge.js`) dan di `DASHBOARDS` pada `extension/background.js`, lalu muat ulang extension.
 
-## Kalau ada kolom yang kosong
+## Pemecahan Masalah
 
-Tokopedia sering mengubah struktur halamannya. Selector ulasan ada di bagian atas `extension/scraper.js`
-(`findReviewCards`, `parseCard`). Perbaiki di sana, lalu muat ulang extension.
+- **Pesan koneksi terputus saat berpindah jendela/tab:** Dashboard tidak lagi menilai koneksi saat tab tersembunyi di latar belakang. Bila pengguna sering berpindah jendela atau menjalankan pengambilan data yang lama, disarankan menjalankan dashboard di jendela Chrome sendiri atau mengecualikan `localhost:3000` dari Memory Saver (`chrome://settings/performance`). Jika alarm sempat muncul secara keliru, dashboard akan otomatis memulihkan status pengambilan kembali ke berjalan begitu batch data berikutnya tiba dari extension.
+- **Kalau ada kolom ulasan yang kosong:** Tokopedia sering mengubah struktur halamannya. Selector ulasan ada di bagian atas `extension/scraper.js` (`findReviewCards`, `parseCard`). Perbaiki di sana, lalu muat ulang extension.
 
 ## Catatan versi 2.1
 

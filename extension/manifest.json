@@ -6,7 +6,8 @@
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "https://www.tokopedia.com/*",
-    "https://shopee.co.id/*"
+    "https://shopee.co.id/*",
+    "https://www.google.com/maps/*"
   ],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Buka dashboard Ulasan Tokped" },
@@ -25,6 +26,11 @@
     {
       "matches": ["https://shopee.co.id/*"],
       "js": ["shopee-scraper.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.google.com/maps/*"],
+      "js": ["maps-scraper.js"],
       "run_at": "document_idle"
     },
     {
