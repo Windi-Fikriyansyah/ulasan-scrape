@@ -178,14 +178,26 @@ const AVATAR_URL = /\/user-\d+\/|default_picture_user|default[_-]toped|avatar|pr
 // bila URL-nya berpola avatar, pindahkan ke field avatar.
 export function cleanReview(r: Review): Review {
   const rating = Number(r.rating) || 0;
-  let images = Array.isArray(r.images) ? r.images : [];
+  let rawImages = Array.isArray(r.images) ? r.images : [];
   let avatar = r.avatar ?? "";
   if (!avatar) {
-    const i = images.findIndex((u) => AVATAR_URL.test(u));
+    const i = rawImages.findIndex((u) => AVATAR_URL.test(u));
     if (i >= 0) {
-      avatar = images[i];
-      images = images.filter((_, k) => k !== i);
+      avatar = rawImages[i];
+      rawImages = rawImages.filter((_, k) => k !== i);
     }
   }
+
+  // Deduplikasi foto ulasan dan normalkan url thumbnail Shopee (_tn)
+  const seen = new Set<string>();
+  const images: string[] = [];
+  for (const img of rawImages) {
+    const clean = img.split("?")[0].split("#")[0].replace(/_tn(?:\.[a-zA-Z0-9]+)?$/i, "");
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      images.push(clean);
+    }
+  }
+
   return { ...r, rating, avatar, images };
 }

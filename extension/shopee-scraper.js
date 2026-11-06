@@ -187,9 +187,17 @@
     return m ? m[1] : "";
   }
 
+  function normalizeImageUrl(url) {
+    if (!url) return "";
+    let clean = url.split("?")[0].split("#")[0];
+    clean = clean.replace(/_tn(?:\.[a-zA-Z0-9]+)?$/i, "");
+    return clean;
+  }
+
   function classifyImages(card, replyBox) {
     let avatar = "";
     const photos = [];
+    const seenPhotos = new Set();
 
     // 1. Temukan Avatar Pembeli
     const avatarImg = card.querySelector(
@@ -200,30 +208,57 @@
       if (goodUrl(src)) avatar = src;
     }
 
+    const addPhoto = (rawUrl) => {
+      const url = normalizeImageUrl(rawUrl);
+      if (goodUrl(url) && url !== avatar && !seenPhotos.has(url)) {
+        seenPhotos.add(url);
+        photos.push(url);
+      }
+    };
+
     // 2. Temukan Foto-foto Ulasan dari Pembeli
-    // Shopee menyimpan foto ulasan sebagai background-image pada .shopee-rating-media-list-image__content
-    const bgElements = card.querySelectorAll(
-      '.shopee-rating-media-list-image__content, .rating-media-list__image-wrapper, [class*="rating-media-list-image__content"], .ZBCPg1 [style*="background-image"]'
+    // Abaikan kontainer zoomed-image karena itu adalah duplikat pop-up/carousel untuk gambar yang sama
+    const mediaContainer = card.querySelector(
+      '.rating-media-list__container, .shopee-product-rating__image-list-wrapper, .ZBCPg1'
+    );
+    const scope = mediaContainer || card;
+
+    // A. Cari elemen dengan background-image di dalam kontainer thumbnail
+    const bgElements = scope.querySelectorAll(
+      '.shopee-rating-media-list-image__content, .rating-media-list__image-wrapper, [class*="rating-media-list-image__content"]'
     );
     for (const el of bgElements) {
       if (replyBox && replyBox.contains(el)) continue;
+      if (el.closest(".rating-media-list__zoomed-image")) continue;
       const bg = el.style.backgroundImage || getComputedStyle(el).backgroundImage || "";
       const url = extractBgUrl(bg);
-      if (goodUrl(url) && url !== avatar) photos.push(url);
+      if (url) addPhoto(url);
     }
 
-    // Jika Shopee menggunakan tag <img> untuk foto ulasan
-    const photoImgs = card.querySelectorAll(
-      '.ZBCPg1 img, .rating-media-list img, .rating-media-list__image-wrapper img, .rating-media-list__zoomed-image-item img'
+    // B. Cari elemen <img> foto ulasan (abaikan avatar, balasan penjual, dan zoomed-image)
+    const photoImgs = scope.querySelectorAll(
+      '.rating-media-list__image-wrapper img, .rating-media-list__container img, .shopee-rating-media-list-image__wrapper img'
     );
     for (const img of photoImgs) {
       if (replyBox && replyBox.contains(img)) continue;
       if (img === avatarImg) continue;
+      if (img.closest(".rating-media-list__zoomed-image")) continue;
       const src = img.currentSrc || img.getAttribute("src") || "";
-      if (goodUrl(src) && src !== avatar) photos.push(src);
+      if (src) addPhoto(src);
     }
 
-    // Fallback bila foto ulasan belum ditemukan
+    // C. Jika belum ditemukan foto sama sekali dari kontainer thumbnail, periksa zoomed-image
+    if (photos.length === 0) {
+      const zoomedImgs = card.querySelectorAll(".rating-media-list__zoomed-image-item");
+      for (const img of zoomedImgs) {
+        if (replyBox && replyBox.contains(img)) continue;
+        if (img === avatarImg) continue;
+        const src = img.currentSrc || img.getAttribute("src") || "";
+        if (src) addPhoto(src);
+      }
+    }
+
+    // D. Fallback umum bila foto ulasan masih belum ditemukan
     if (photos.length === 0) {
       for (const img of card.querySelectorAll("img")) {
         if (replyBox && replyBox.contains(img)) continue;
@@ -234,12 +269,12 @@
         if (/avatar|profile|headshot/i.test(src)) {
           if (!avatar) avatar = src;
         } else {
-          photos.push(src);
+          addPhoto(src);
         }
       }
     }
 
-    return { avatar, images: [...new Set(photos)] };
+    return { avatar, images: photos };
   }
 
   function parseSellerReply(card) {
