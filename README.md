@@ -13,8 +13,27 @@ extension/   extension Chrome (Manifest V3), jembatan antara dashboard dan Tokop
 ```bash
 cd dashboard
 npm install
+
+# 1. Konfigurasi database PostgreSQL
+# Salin file .env.example menjadi .env.local dan sesuaikan kredensial Anda
+cp .env.example .env.local
+
+# 2. Buat database dan jalankan migrasi tabel
+npm run db:setup
+
+# 3. Jalankan server pengembangan
 npm run dev        # http://localhost:3000
 ```
+
+## Database PostgreSQL (Penyimpanan Utama)
+
+Semua data riwayat ulasan produk dan data Lead maps disimpan langsung di database **PostgreSQL**:
+- **Real-time & Cepat:** Antarmuka React diperbarui seketika dari extension tanpa jeda. Data disimpan ke PostgreSQL di latar belakang (*write-behind queue*) secara otomatis.
+- **Perintah Database:**
+  - `npm run db:create`: Membuat database baru di PostgreSQL (bila belum ada).
+  - `npm run db:migrate`: Menjalankan migrasi skema tabel (`db/migrations/`).
+  - `npm run db:setup`: Menjalankan pembuatan database sekaligus migrasi.
+- **Impor Data Lama:** Bila sebelumnya ada data tersimpan di browser (IndexedDB), tombol **Impor ke PostgreSQL** akan otomatis muncul di bagian atas dashboard untuk memindahkan seluruh data lama ke database dalam satu klik.
 
 ## Memasang extension (sekali saja)
 

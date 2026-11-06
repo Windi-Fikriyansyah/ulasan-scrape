@@ -1,9 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { ExtEvent, Job, LeadField, LeadJob, Market } from "@/lib/types";
+import type { ExtEvent, Job, Lead, LeadField, LeadJob, Market } from "@/lib/types";
 import { useExtension } from "@/lib/bridge";
-import { listJobs, removeJob, saveJob } from "@/lib/db";
-import { listLeadJobs, removeLeadJob, saveLeadJob } from "@/lib/leads-db";
+import { listJobs } from "@/lib/db";
+import { listLeadJobs } from "@/lib/leads-db";
+import {
+  checkDbStatus,
+  deleteJobRemote,
+  deleteLeadJobRemote,
+  fetchJobs,
+  fetchLeadJobs,
+  importFromIndexedDb,
+  pgQueue,
+} from "@/lib/pg-client";
 import { cleanReview, newId, normalizeProductUrl, normalizeShopeeUrl } from "@/lib/analysis";
 import { buildMapsUrl, validateLeadInput } from "@/lib/leads";
 import Sidebar, { type MenuId } from "@/components/Sidebar";
@@ -35,13 +44,16 @@ export default function Home() {
   const [leadLoaded, setLeadLoaded] = useState(false);
   const [leadFormError, setLeadFormError] = useState<string | null>(null);
 
+  // State status database PostgreSQL & migrasi data lama
+  const [dbStatus, setDbStatus] = useState<{ ok: boolean; message?: string; error?: string } | undefined>(undefined);
+  const [legacyDataCount, setLegacyDataCount] = useState<{ jobs: number; leads: number } | null>(null);
+  const [importing, setImporting] = useState(false);
+
   const jobsRef = useRef<Job[]>([]);
   const runningRef = useRef<string | null>(null);
-  const lastSave = useRef(0);
 
   const leadJobsRef = useRef<LeadJob[]>([]);
   const runningLeadRef = useRef<string | null>(null);
-  const lastLeadSave = useRef(0);
 
   const commit = (next: Job[]) => {
     jobsRef.current = next;
@@ -61,129 +73,124 @@ export default function Home() {
     setRunningLeadId(id);
   };
 
-  const patch = (id: string, fn: (j: Job) => Job, forceSave = false) => {
+  const patch = (id: string, fn: (j: Job) => Job) => {
     const cur = jobsRef.current.find((j) => j.id === id);
     if (!cur) return;
     const updated = fn(cur);
     commit(jobsRef.current.map((j) => (j.id === id ? updated : j)));
-    const now = Date.now();
-    if (forceSave || now - lastSave.current > 1500) {
-      lastSave.current = now;
-      saveJob(updated).catch(() => {});
-    }
   };
 
-  const patchLead = (id: string, fn: (j: LeadJob) => LeadJob, forceSave = false) => {
+  const patchLead = (id: string, fn: (j: LeadJob) => LeadJob) => {
     const cur = leadJobsRef.current.find((j) => j.id === id);
     if (!cur) return;
     const updated = fn(cur);
     commitLead(leadJobsRef.current.map((j) => (j.id === id ? updated : j)));
-    const now = Date.now();
-    if (forceSave || now - lastLeadSave.current > 1500) {
-      lastLeadSave.current = now;
-      saveLeadJob(updated).catch(() => {});
-    }
   };
 
   const onEvent = (e: ExtEvent) => {
     switch (e.type) {
       case "META":
         if (leadJobsRef.current.some((j) => j.id === e.jobId)) {
-          patchLead(e.jobId, (j) => ({ ...j, sample: e.sample || j.sample }), true);
+          patchLead(e.jobId, (j) => ({ ...j, sample: e.sample || j.sample }));
+          if (e.sample) pgQueue.updateLeadJobMeta(e.jobId, e.sample);
         } else {
           patch(
             e.jobId,
-            (j) => ({ ...j, title: e.title || j.title, image: e.image || j.image, sample: e.sample || j.sample }),
-            true
+            (j) => ({ ...j, title: e.title || j.title, image: e.image || j.image, sample: e.sample || j.sample })
           );
+          pgQueue.updateJobMeta(e.jobId, { title: e.title, image: e.image, sample: e.sample });
         }
         break;
+
       case "BATCH": {
         const cur = jobsRef.current.find((j) => j.id === e.jobId);
         const shouldRecover = cur && cur.status === "error" && cur.error === ERR_DISCONNECTED;
         if (shouldRecover) {
           setRunning(e.jobId);
         }
-        patch(
-          e.jobId,
-          (j) => ({
-            ...j,
-            status: shouldRecover ? "running" : j.status,
-            error: shouldRecover ? undefined : j.error,
-            finishedAt: shouldRecover ? undefined : j.finishedAt,
-            page: e.page,
-            reviews: [...j.reviews, ...e.reviews.map(cleanReview)],
-          }),
-          Boolean(shouldRecover)
-        );
+        const cleaned = e.reviews.map(cleanReview);
+        patch(e.jobId, (j) => ({
+          ...j,
+          status: shouldRecover ? "running" : j.status,
+          error: shouldRecover ? undefined : j.error,
+          finishedAt: shouldRecover ? undefined : j.finishedAt,
+          page: e.page,
+          reviews: [...j.reviews, ...cleaned],
+        }));
+        pgQueue.appendReviews(e.jobId, cleaned, e.page);
         break;
       }
+
       case "LEADS": {
         const cur = leadJobsRef.current.find((j) => j.id === e.jobId);
         const shouldRecover = cur && cur.status === "error" && cur.error === ERR_DISCONNECTED;
         if (shouldRecover) {
           setRunningLead(e.jobId);
         }
-        patchLead(
-          e.jobId,
-          (j) => {
-            // Scraper sudah membuang duplikat per tempat. Di sini hanya cegah batch ganda
-            // berdasarkan link Maps; nama yang sama (cabang berbeda) tidak dibuang.
-            const existing = new Set(j.leads.map((l) => l.mapsUrl).filter(Boolean));
-            const newLeads = e.leads.filter((l) => !l.mapsUrl || !existing.has(l.mapsUrl));
-            return {
-              ...j,
-              status: shouldRecover ? "running" : j.status,
-              error: shouldRecover ? undefined : j.error,
-              finishedAt: shouldRecover ? undefined : j.finishedAt,
-              found: e.found,
-              leads: [...j.leads, ...newLeads],
-            };
-          },
-          Boolean(shouldRecover)
-        );
-        break;
-      }
-      case "DONE":
-        if (leadJobsRef.current.some((j) => j.id === e.jobId)) {
-          patchLead(
-            e.jobId,
-            (j) => ({ ...j, status: e.stopped ? "stopped" : "done", error: undefined, finishedAt: Date.now() }),
-            true
-          );
-          if (runningLeadRef.current === e.jobId) setRunningLead(null);
-        } else {
-          patch(
-            e.jobId,
-            (j) => ({ ...j, status: e.stopped ? "stopped" : "done", error: undefined, finishedAt: Date.now() }),
-            true
-          );
-          if (runningRef.current === e.jobId) setRunning(null);
+        let addedLeads: Lead[] = [];
+        patchLead(e.jobId, (j) => {
+          const existing = new Set(j.leads.map((l) => l.mapsUrl).filter(Boolean));
+          const newLeads = e.leads.filter((l) => !l.mapsUrl || !existing.has(l.mapsUrl));
+          addedLeads = newLeads;
+          return {
+            ...j,
+            status: shouldRecover ? "running" : j.status,
+            error: shouldRecover ? undefined : j.error,
+            finishedAt: shouldRecover ? undefined : j.finishedAt,
+            found: e.found,
+            leads: [...j.leads, ...newLeads],
+          };
+        });
+        if (addedLeads.length > 0) {
+          pgQueue.appendLeads(e.jobId, addedLeads, e.found);
         }
         break;
+      }
+
+      case "DONE": {
+        const now = Date.now();
+        if (leadJobsRef.current.some((j) => j.id === e.jobId)) {
+          patchLead(e.jobId, (j) => ({
+            ...j,
+            status: e.stopped ? "stopped" : "done",
+            error: undefined,
+            finishedAt: now,
+          }));
+          if (runningLeadRef.current === e.jobId) setRunningLead(null);
+          pgQueue.finishLeadJob(e.jobId, e.stopped ? "stopped" : "done", now);
+        } else {
+          patch(e.jobId, (j) => ({
+            ...j,
+            status: e.stopped ? "stopped" : "done",
+            error: undefined,
+            finishedAt: now,
+          }));
+          if (runningRef.current === e.jobId) setRunning(null);
+          pgQueue.finishJob(e.jobId, e.stopped ? "stopped" : "done", now);
+        }
+        break;
+      }
+
       case "ERROR": {
+        const now = Date.now();
         const leadId = e.jobId ?? (runningLeadRef.current || undefined);
         const revId = e.jobId ?? (runningRef.current || undefined);
         if (leadId && leadJobsRef.current.some((j) => j.id === leadId)) {
-          patchLead(leadId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }), true);
+          patchLead(leadId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: now }));
           if (runningLeadRef.current === leadId) setRunningLead(null);
+          pgQueue.failLeadJob(leadId, e.message, now);
         } else if (revId && jobsRef.current.some((j) => j.id === revId)) {
-          patch(revId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }), true);
+          patch(revId, (j) => ({ ...j, status: "error", error: e.message, finishedAt: now }));
           if (runningRef.current === revId) setRunning(null);
+          pgQueue.failJob(revId, e.message, now);
         } else {
           if (runningLeadRef.current) {
-            patchLead(
-              runningLeadRef.current,
-              (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }),
-              true
-            );
+            patchLead(runningLeadRef.current, (j) => ({ ...j, status: "error", error: e.message, finishedAt: now }));
+            pgQueue.failLeadJob(runningLeadRef.current, e.message, now);
             setRunningLead(null);
           } else if (runningRef.current) {
-            patch(
-              runningRef.current,
-              (j) => ({ ...j, status: "error", error: e.message, finishedAt: Date.now() }),
-              true
-            );
+            patch(runningRef.current, (j) => ({ ...j, status: "error", error: e.message, finishedAt: now }));
+            pgQueue.failJob(runningRef.current, e.message, now);
             setRunning(null);
           } else {
             setFormError(e.message);
@@ -197,80 +204,83 @@ export default function Home() {
 
   const ext = useExtension(onEvent);
 
-  // Muat riwayat ulasan produk
+  // Muat status PostgreSQL dan riwayat saat aplikasi pertama kali dibuka
   useEffect(() => {
-    listJobs()
+    checkDbStatus().then((s) => setDbStatus(s));
+
+    fetchJobs()
       .then((stored) => {
-        const fixed = stored.map((j) => ({
-          ...j,
-          status: j.status === "running" ? ("stopped" as const) : j.status,
-          finishedAt: j.status === "running" ? (j.finishedAt ?? Date.now()) : j.finishedAt,
-          reviews: j.reviews.map(cleanReview),
-        }));
-        fixed.forEach((j, i) => {
-          if (stored[i].status === "running") saveJob(j).catch(() => {});
-        });
-        commit(fixed);
-        const first = fixed.find((j) => marketOf(j) === "tokopedia");
+        commit(stored);
+        const first = stored.find((j) => marketOf(j) === "tokopedia");
         if (first) setSelectedId(first.id);
       })
-      .catch(() => {})
+      .catch((err) => console.error("Gagal memuat ulasan dari Postgres:", err))
       .finally(() => setLoaded(true));
-  }, []);
 
-  // Muat riwayat Lead Maps
-  useEffect(() => {
-    listLeadJobs()
+    fetchLeadJobs()
       .then((stored) => {
-        const fixed = stored.map((j) => ({
-          ...j,
-          status: j.status === "running" ? ("stopped" as const) : j.status,
-          finishedAt: j.status === "running" ? (j.finishedAt ?? Date.now()) : j.finishedAt,
-        }));
-        fixed.forEach((j, i) => {
-          if (stored[i].status === "running") saveLeadJob(j).catch(() => {});
-        });
-        commitLead(fixed);
-        if (fixed.length > 0) setSelectedLeadId(fixed[0].id);
+        commitLead(stored);
+        if (stored.length > 0) setSelectedLeadId(stored[0].id);
       })
-      .catch(() => {})
+      .catch((err) => console.error("Gagal memuat lead maps dari Postgres:", err))
       .finally(() => setLeadLoaded(true));
+
+    // Periksa apakah ada data lama di IndexedDB (browser) untuk ditawarkan impor
+    Promise.all([listJobs().catch(() => []), listLeadJobs().catch(() => [])]).then(([oldJobs, oldLeads]) => {
+      if (oldJobs.length > 0 || oldLeads.length > 0) {
+        setLegacyDataCount({ jobs: oldJobs.length, leads: oldLeads.length });
+      }
+    });
   }, []);
 
   // Extension terputus saat pengambilan berjalan
   useEffect(() => {
     if (ext.status === "missing") {
+      const now = Date.now();
       if (runningRef.current) {
         const id = runningRef.current;
-        patch(
-          id,
-          (j) => ({
-            ...j,
-            status: "error",
-            error: ERR_DISCONNECTED,
-            finishedAt: Date.now(),
-          }),
-          true
-        );
+        patch(id, (j) => ({
+          ...j,
+          status: "error",
+          error: ERR_DISCONNECTED,
+          finishedAt: now,
+        }));
+        pgQueue.failJob(id, ERR_DISCONNECTED, now);
         setRunning(null);
       }
       if (runningLeadRef.current) {
         const id = runningLeadRef.current;
-        patchLead(
-          id,
-          (j) => ({
-            ...j,
-            status: "error",
-            error: ERR_DISCONNECTED,
-            finishedAt: Date.now(),
-          }),
-          true
-        );
+        patchLead(id, (j) => ({
+          ...j,
+          status: "error",
+          error: ERR_DISCONNECTED,
+          finishedAt: now,
+        }));
+        pgQueue.failLeadJob(id, ERR_DISCONNECTED, now);
         setRunningLead(null);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ext.status]);
+
+  const handleImportLegacy = async () => {
+    setImporting(true);
+    try {
+      const [oldJobs, oldLeads] = await Promise.all([listJobs(), listLeadJobs()]);
+      const res = await importFromIndexedDb(oldJobs, oldLeads);
+      const [newJobs, newLeads] = await Promise.all([fetchJobs(), fetchLeadJobs()]);
+      commit(newJobs);
+      commitLead(newLeads);
+      setLegacyDataCount(null);
+      alert(
+        `Berhasil mengimpor ${res.importedJobs} riwayat ulasan (${res.importedReviews} ulasan) dan ${res.importedLeadJobs} riwayat lead maps (${res.importedLeads} tempat) ke PostgreSQL!`
+      );
+    } catch (err: any) {
+      alert(`Gagal mengimpor data ke PostgreSQL: ${err.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const start = (rawUrl: string, pages: number, delaySec: number) => {
     setFormError(null);
@@ -299,7 +309,7 @@ export default function Home() {
     commit([job, ...jobsRef.current]);
     setSelectedId(job.id);
     setRunning(job.id);
-    saveJob(job).catch(() => {});
+    pgQueue.saveJobStart(job);
     ext.send({ type: "START", jobId: job.id, market: "tokopedia", url: n.url, options: { maxPages, delay } });
   };
 
@@ -330,7 +340,7 @@ export default function Home() {
     commit([job, ...jobsRef.current]);
     setSelectedId(job.id);
     setRunning(job.id);
-    saveJob(job).catch(() => {});
+    pgQueue.saveJobStart(job);
     ext.send({ type: "START", jobId: job.id, market: "shopee", url: n.url, options: { maxPages, delay } });
   };
 
@@ -361,7 +371,7 @@ export default function Home() {
     commitLead([leadJob, ...leadJobsRef.current]);
     setSelectedLeadId(leadJob.id);
     setRunningLead(leadJob.id);
-    saveLeadJob(leadJob).catch(() => {});
+    pgQueue.saveLeadJobStart(leadJob);
     ext.send({
       type: "START",
       jobId: leadJob.id,
@@ -390,14 +400,14 @@ export default function Home() {
   };
 
   const remove = (id: string) => {
-    removeJob(id).catch(() => {});
+    deleteJobRemote(id).catch((err) => console.error("Gagal menghapus job di Postgres:", err));
     const next = jobsRef.current.filter((j) => j.id !== id);
     commit(next);
     setSelectedId(next.find((j) => marketOf(j) === market)?.id ?? null);
   };
 
   const removeLead = (id: string) => {
-    removeLeadJob(id).catch(() => {});
+    deleteLeadJobRemote(id).catch((err) => console.error("Gagal menghapus lead job di Postgres:", err));
     const next = leadJobsRef.current.filter((j) => j.id !== id);
     commitLead(next);
     setSelectedLeadId(next[0]?.id ?? null);
@@ -409,9 +419,37 @@ export default function Home() {
 
   return (
     <div className="app">
-      <Sidebar menu={menu} onMenu={setMenu} status={ext.status} version={ext.version} />
+      <Sidebar menu={menu} onMenu={setMenu} status={ext.status} version={ext.version} dbStatus={dbStatus} />
 
       <div className="content">
+        {dbStatus && !dbStatus.ok && (
+          <div className="note" style={{ marginTop: "24px", borderColor: "var(--red)", background: "rgba(201, 58, 36, 0.08)" }} role="alert">
+            <b>Perhatian Database:</b> {dbStatus.error || "PostgreSQL belum terhubung."} Pastikan PostgreSQL sudah aktif dan konfigurasi pada <code>.env.local</code> sudah benar.
+          </div>
+        )}
+
+        {legacyDataCount && (legacyDataCount.jobs > 0 || legacyDataCount.leads > 0) && (
+          <div
+            className="note"
+            style={{
+              marginTop: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <span>
+              Ditemukan data lama di penyimpanan browser (IndexedDB): {legacyDataCount.jobs} riwayat ulasan dan{" "}
+              {legacyDataCount.leads} riwayat lead maps.
+            </span>
+            <button type="button" className="btn solid" disabled={importing} onClick={handleImportLegacy}>
+              {importing ? "Mengimpor…" : "Impor ke PostgreSQL"}
+            </button>
+          </div>
+        )}
+
         {menu === "ambil" && (
           <>
             <MarketTabs value={market} onChange={changeMarket} />

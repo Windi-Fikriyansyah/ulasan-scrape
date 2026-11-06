@@ -12,15 +12,24 @@ type Props = {
   onMenu: (id: MenuId) => void;
   status: ExtStatus;
   version: string | null;
+  dbStatus?: { ok: boolean; message?: string; error?: string };
 };
 
-export default function Sidebar({ menu, onMenu, status, version }: Props) {
+export default function Sidebar({ menu, onMenu, status, version, dbStatus }: Props) {
   const text =
     status === "connected"
       ? `Extension terhubung, versi ${version}`
       : status === "checking"
         ? "Memeriksa extension"
         : "Extension belum terhubung";
+
+  const dbText = dbStatus
+    ? dbStatus.ok
+      ? "Database PostgreSQL terhubung"
+      : dbStatus.error || "PostgreSQL belum terhubung"
+    : "Memeriksa database";
+
+  const dbClass = dbStatus ? (dbStatus.ok ? "connected" : "missing") : "checking";
 
   return (
     <aside className="side">
@@ -39,10 +48,17 @@ export default function Sidebar({ menu, onMenu, status, version }: Props) {
         </ul>
       </nav>
 
-      <span className={`conn ${status}`} role="status">
-        <i className="sq" aria-hidden="true" />
-        {text}
-      </span>
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <span className={`conn ${dbClass}`} role="status" title={dbStatus?.error}>
+          <i className="sq" aria-hidden="true" />
+          {dbText}
+        </span>
+
+        <span className={`conn ${status}`} role="status">
+          <i className="sq" aria-hidden="true" />
+          {text}
+        </span>
+      </div>
     </aside>
   );
 }
