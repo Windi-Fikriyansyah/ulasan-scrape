@@ -183,10 +183,37 @@
   }
 
   function isLoadingIndicatorPresent() {
-    const spinners = document.querySelectorAll(
-      '[role="progressbar"], [aria-busy="true"], [data-visualcompletion="loading-state"]'
+    const main = document.querySelector('div[role="main"], div[role="feed"]') || document.body;
+    if (!main) return false;
+    const spinners = main.querySelectorAll(
+      '[role="progressbar"], [data-visualcompletion="loading-state"]'
     );
-    return spinners.length > 0;
+    for (const s of spinners) {
+      if (s.offsetParent !== null && s.offsetWidth > 0 && s.offsetHeight > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isPageAtBottom(scroller) {
+    const winScrollY = window.scrollY || window.pageYOffset || (document.documentElement ? document.documentElement.scrollTop : 0);
+    const winH = window.innerHeight || 800;
+    const bodyH = document.body ? document.body.scrollHeight : 0;
+    const docH = document.documentElement ? document.documentElement.scrollHeight : 0;
+    const totalH = Math.max(bodyH, docH);
+
+    if (totalH > 0 && winScrollY + winH >= totalH - 120) {
+      return true;
+    }
+
+    if (scroller && scroller !== document.documentElement && scroller !== document.body) {
+      if (scroller.scrollHeight > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 60) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function clickSeeMoreButtons() {
@@ -386,93 +413,110 @@
         } else {
           consecutiveNoNew++;
 
-          if (consecutiveNoNew % 3 === 0) {
-            if (scroller && scroller !== document.documentElement && scroller !== document.body) {
-              scroller.scrollTop = scroller.scrollHeight;
-            }
-            window.scrollTo(0, document.body ? document.body.scrollHeight : 999999);
-            try {
-              if (scroller && scroller.dispatchEvent) {
-                scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+              // Jika tidak ada grup baru, paksa scroll ke bagian bawah dan coba memuat sisa
+              if (scroller && scroller !== document.documentElement && scroller !== document.body) {
+                scroller.scrollTop = scroller.scrollHeight;
               }
-              window.dispatchEvent(new Event("scroll"));
+              window.scrollTo(0, Math.max(document.body ? document.body.scrollHeight : 0, 999999));
+              try {
+                if (scroller && scroller.dispatchEvent) {
+                  scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+                }
+            window.dispatchEvent(new Event("scroll"));
             } catch (_) { }
             clickSeeMoreButtons();
+
+            await tkpSleep(Math.min(2200, 750 + consecutiveNoNew * 150));
           }
 
-          await tkpSleep(Math.min(2500, 800 + consecutiveNoNew * 150));
+          const isAtBottom = isPageAtBottom(scroller);
+
+          if (isEndOfListTextPresent()) {
+            stopReason = "akhir_daftar";
+            break;
+          }
+
+            // Jika sudah ada grup terambil dan berada di bagian bawah halaman tanpa ada grup baru lagi selama 5 langkah
+            if (harvested.size > 0 && isAtBottom && consecutiveNoNew >= 5) {
+              stopReason = "akhir_daftar";
+              break;
+            }
+
+              // Jika sudah ada grup terambil dan tidak bertambah sama sekali selama 8 langkah
+              if (harvested.size > 0 && consecutiveNoNew >= 8) {
+                stopReason = "akhir_daftar";
+                break;
+              }
+
+              // Jika akun memang tidak memiliki grup sama sekali setelah 15 langkah
+              if (harvested.size === 0 && consecutiveNoNew >= 15) {
+                stopReason = "tidak_ada_grup";
+                break;
+              }
+            }
+
+            if (newSinceLastBatch.length > 0) {
+              chrome.runtime.sendMessage({
+                kind: "tkp-scrape",
+                type: "fb-groups",
+                found: harvested.size,
+                groups: [...newSinceLastBatch],
+                step: steps,
+                runId: currentRunId,
+              }).catch(() => { });
+              newSinceLastBatch = [];
+            }
+
+            if (isStopped) {
+              stopReason = "dihentikan";
+            } else if (stopReason === "tidak_ada_grup" && harvested.size > 0) {
+              stopReason = "akhir_daftar";
+            }
+
+            chrome.runtime.sendMessage({
+              kind: "tkp-scrape",
+              type: "fb-groups-done",
+              total: harvested.size,
+              stopped: isStopped,
+              runId: currentRunId,
+              diag: {
+                jalur: "scroll",
+                stopReason,
+                total: harvested.size,
+                steps,
+                durationMs: Date.now() - startTime,
+                hiddenDurationMs,
+                hiddenCount,
+                visibilityStart,
+                visibilityEnd: document.visibilityState,
+                scrollerTag: scroller.tagName || "WINDOW",
+                scrollerRole: scroller.getAttribute ? (scroller.getAttribute("role") || "") : "",
+                skipped: {
+                  notGroup: skippedNotGroup,
+                  ignoredPath: skippedIgnored,
+                  duplicate: skippedDuplicate,
+                },
+                sampleSkipped: sampleSkipped.slice(0, 5),
+              },
+            }).catch(() => { });
+          } finally {
+            if (activeRunId === currentRunId) {
+              isRunning = false;
+            }
+          }
         }
 
-        const scrollH = scroller.scrollHeight || (document.documentElement ? document.documentElement.scrollHeight : 0);
-        const scrollT = scroller.scrollTop || window.scrollY || 0;
-        const isAtBottom = (scrollT + clientH >= scrollH - 60);
-
-        if (isEndOfListTextPresent()) {
-          stopReason = "akhir_daftar";
-          break;
-        }
-
-        if (consecutiveNoNew >= 25 && isAtBottom && !isLoadingIndicatorPresent()) {
-          stopReason = harvested.size > 0 ? "akhir_daftar" : "tidak_ada_grup";
-          break;
-        }
-
-        if (consecutiveNoNew >= 45 && !isLoadingIndicatorPresent()) {
-          stopReason = harvested.size > 0 ? "tidak_bertambah" : "tidak_ada_grup";
-          break;
-        }
-      }
-
-      if (isStopped) {
-        stopReason = "dihentikan";
-      } else if (stopReason === "tidak_ada_grup" && harvested.size > 0) {
-        stopReason = "akhir_daftar";
-      }
-
-      chrome.runtime.sendMessage({
-        kind: "tkp-scrape",
-        type: "fb-groups-done",
-        total: harvested.size,
-        stopped: isStopped,
-        runId: currentRunId,
-        diag: {
-          jalur: "scroll",
-          stopReason,
-          total: harvested.size,
-          steps,
-          durationMs: Date.now() - startTime,
-          hiddenDurationMs,
-          hiddenCount,
-          visibilityStart,
-          visibilityEnd: document.visibilityState,
-          scrollerTag: scroller.tagName || "WINDOW",
-          scrollerRole: scroller.getAttribute ? (scroller.getAttribute("role") || "") : "",
-          skipped: {
-            notGroup: skippedNotGroup,
-            ignoredPath: skippedIgnored,
-            duplicate: skippedDuplicate,
-          },
-          sampleSkipped: sampleSkipped.slice(0, 5),
-        },
-      }).catch(() => { });
-    } finally {
-      if (activeRunId === currentRunId) {
-        isRunning = false;
-      }
-    }
-  }
-
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (!msg) return;
-    if (msg.kind === "fb-groups-start") {
-      startCollection(msg.runId);
-      sendResponse({ ok: true });
-    } else if (msg.kind === "fb-groups-stop") {
-      if (!msg.runId || msg.runId === activeRunId) {
-        isStopped = true;
-        isRunning = false;
-      }
-      sendResponse({ ok: true });
-    }
-  });
-})();
+        chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+          if (!msg) return;
+          if (msg.kind === "fb-groups-start") {
+            startCollection(msg.runId);
+            sendResponse({ ok: true });
+          } else if (msg.kind === "fb-groups-stop") {
+            if (!msg.runId || msg.runId === activeRunId) {
+              isStopped = true;
+              isRunning = false;
+            }
+            sendResponse({ ok: true });
+          }
+        });
+      }) ();
