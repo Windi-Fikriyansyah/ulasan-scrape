@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ExtEvent, Job, Market } from "@/lib/types";
 import { useExtension } from "@/lib/bridge";
 import { listJobs, removeJob, saveJob } from "@/lib/db";
-import { cleanReview, newId, normalizeProductUrl } from "@/lib/analysis";
+import { cleanReview, newId, normalizeProductUrl, normalizeShopeeUrl } from "@/lib/analysis";
 import Sidebar, { type MenuId } from "@/components/Sidebar";
 import MarketTabs, { MARKETS } from "@/components/MarketTabs";
 import Gate from "@/components/Gate";
@@ -143,11 +143,45 @@ export default function Home() {
     setSelectedId(job.id);
     setRunning(job.id);
     saveJob(job).catch(() => {});
-    ext.send({ type: "START", jobId: job.id, url: n.url, options: { maxPages, delay } });
+    ext.send({ type: "START", jobId: job.id, market: "tokopedia", url: n.url, options: { maxPages, delay } });
+  };
+
+  const startShopee = (rawUrl: string, pages: number, delaySec: number) => {
+    setFormError(null);
+    const n = normalizeShopeeUrl(rawUrl);
+    if (!n.ok) {
+      setFormError(n.message);
+      return;
+    }
+    const maxPages = Math.min(200, Math.max(1, Math.round(pages) || 10));
+    const delay = Math.round(Math.min(10, Math.max(0.5, delaySec || 1.2)) * 1000);
+    const job: Job = {
+      id: newId(),
+      market: "shopee",
+      url: n.url,
+      title: "Membaca produk…",
+      startedAt: Date.now(),
+      status: "running",
+      page: 0,
+      maxPages,
+      reviews: [],
+    };
+    commit([job, ...jobsRef.current]);
+    setSelectedId(job.id);
+    setRunning(job.id);
+    saveJob(job).catch(() => {});
+    ext.send({ type: "START", jobId: job.id, market: "shopee", url: n.url, options: { maxPages, delay } });
   };
 
   const stop = () => {
     if (runningRef.current) ext.send({ type: "STOP", jobId: runningRef.current });
+  };
+
+  const changeMarket = (m: Market) => {
+    setMarket(m);
+    setFormError(null);
+    const first = jobsRef.current.find((j) => marketOf(j) === m);
+    setSelectedId(first?.id ?? null);
   };
 
   const remove = (id: string) => {
@@ -167,7 +201,7 @@ export default function Home() {
       <div className="content">
         {menu === "ambil" && (
           <>
-            <MarketTabs value={market} onChange={setMarket} />
+            <MarketTabs value={market} onChange={changeMarket} />
 
             {market === "tokopedia" ? (
               <div role="tabpanel" id="panel-tokopedia" aria-labelledby="tab-tokopedia">
@@ -189,6 +223,34 @@ export default function Home() {
                         <h1>Belum ada ulasan di sini</h1>
                         <p>
                           Tempel link produk Tokopedia di kalimat atas, lalu klik Mulai ambil. Tokopedia akan terbuka
+                          sebentar di tab latar belakang, dan ulasannya muncul di halaman ini begitu terbaca.
+                        </p>
+                      </section>
+                    )}
+                  </main>
+                </div>
+              </div>
+            ) : market === "shopee" ? (
+              <div role="tabpanel" id="panel-shopee" aria-labelledby="tab-shopee">
+                {ext.status === "missing" && <Gate />}
+                <Capture
+                  ready={ext.status === "connected"}
+                  running={runningId !== null}
+                  error={formError}
+                  placeholder="shopee.co.id/nama-produk-i.123.456"
+                  onStart={startShopee}
+                  onStop={stop}
+                />
+                <div className="desk">
+                  <Archive jobs={marketJobs} selectedId={selectedId} loaded={loaded} onSelect={setSelectedId} />
+                  <main>
+                    {selected ? (
+                      <Report key={selected.id} job={selected} onDelete={() => remove(selected.id)} />
+                    ) : (
+                      <section className="empty">
+                        <h1>Belum ada ulasan di sini</h1>
+                        <p>
+                          Tempel link produk Shopee di kalimat atas, lalu klik Mulai ambil. Shopee akan terbuka
                           sebentar di tab latar belakang, dan ulasannya muncul di halaman ini begitu terbaca.
                         </p>
                       </section>

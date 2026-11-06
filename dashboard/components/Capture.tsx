@@ -5,11 +5,19 @@ type Props = {
   ready: boolean;
   running: boolean;
   error: string | null;
+  placeholder?: string;
   onStart: (url: string, pages: number, delaySec: number) => void;
   onStop: () => void;
 };
 
-export default function Capture({ ready, running, error, onStart, onStop }: Props) {
+export default function Capture({
+  ready,
+  running,
+  error,
+  placeholder = "tokopedia.com/nama-toko/nama-produk",
+  onStart,
+  onStop,
+}: Props) {
   const [url, setUrl] = useState("");
   const [pages, setPages] = useState(10);
   const [delay, setDelay] = useState(1.2);
@@ -31,7 +39,7 @@ export default function Capture({ ready, running, error, onStart, onStop }: Prop
           inputMode="url"
           autoComplete="off"
           spellCheck={false}
-          placeholder="tokopedia.com/nama-toko/nama-produk"
+          placeholder={placeholder}
           value={url}
           disabled={running}
           onChange={(e) => setUrl(e.target.value)}

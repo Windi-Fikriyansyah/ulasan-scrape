@@ -58,14 +58,14 @@ function RatingStars({ rating }: { rating: number }) {
   );
 }
 
-function Diagnosis({ sample }: { sample: string }) {
+function Diagnosis({ sample, marketLabel = "Tokopedia" }: { sample: string; marketLabel?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <details className="diag">
       <summary>Rating atau foto salah terbaca? Salin HTML contoh untuk diagnosa</summary>
       <p className="muted small">
-        Ini HTML dari satu kartu ulasan pertama di Tokopedia. Kirim ke pengembang agar pembacaan rating dan foto bisa
-        disesuaikan dengan tampilan terbaru Tokopedia.
+        Ini HTML dari satu kartu ulasan pertama di {marketLabel}. Kirim ke pengembang agar pembacaan rating dan foto bisa
+        disesuaikan dengan tampilan terbaru {marketLabel}.
       </p>
       <textarea className="field code" readOnly rows={8} value={sample} aria-label="HTML contoh ulasan" />
       <button
@@ -87,7 +87,7 @@ function Diagnosis({ sample }: { sample: string }) {
   );
 }
 
-function Progress({ job }: { job: Job }) {
+function Progress({ job, marketLabel = "Tokopedia" }: { job: Job; marketLabel?: string }) {
   const pct = Math.min(100, Math.round((job.page / job.maxPages) * 100));
   const latest = job.reviews.slice(-3).reverse();
   return (
@@ -99,7 +99,7 @@ function Progress({ job }: { job: Job }) {
         <div className="bar-run" style={{ width: `${Math.max(pct, 4)}%` }} />
       </div>
       <p className="muted small">
-        Tokopedia dibuka di tab latar belakang dan akan menutup sendiri setelah selesai. Jangan tutup tab itu.
+        {marketLabel} dibuka di tab latar belakang dan akan menutup sendiri setelah selesai. Jangan tutup tab itu.
       </p>
       {latest.length > 0 && (
         <ul className="feed">
@@ -129,6 +129,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
 
   const running = job.status === "running";
   const unrated = job.reviews.filter((r) => !(r.rating >= 1 && r.rating <= 5)).length;
+  const marketLabel = job.market === "shopee" ? "Shopee" : "Tokopedia";
 
   return (
     <article className="sheet">
@@ -141,7 +142,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
         Diambil {dateTime(job.startedAt)}
       </p>
 
-      {running && <Progress job={job} />}
+      {running && <Progress job={job} marketLabel={marketLabel} />}
 
       {job.status === "error" && (
         <div className="err" role="alert">
@@ -180,7 +181,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
           >
-            <option value="asli">Urutan di Tokopedia</option>
+            <option value="asli">Urutan di {marketLabel}</option>
             <option value="tinggi">Rating tertinggi</option>
             <option value="rendah">Rating terendah</option>
             <option value="panjang">Ulasan terpanjang</option>
@@ -269,7 +270,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
         )}
       </section>
 
-      {job.sample && <Diagnosis sample={job.sample} />}
+      {job.sample && <Diagnosis sample={job.sample} marketLabel={marketLabel} />}
     </article>
   );
 }

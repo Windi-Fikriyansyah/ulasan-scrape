@@ -130,6 +130,40 @@ export function normalizeProductUrl(raw: string): { ok: true; url: string } | { 
   return { ok: true, url: `https://www.tokopedia.com/${parts.join("/")}/review` };
 }
 
+export function normalizeShopeeUrl(raw: string): { ok: true; url: string } | { ok: false; message: string } {
+  const text = raw.trim();
+  if (!text) return { ok: false, message: "Tempel link produk Shopee dulu." };
+  let u: URL;
+  try {
+    u = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return { ok: false, message: "Link tidak bisa dibaca. Salin langsung dari bilah alamat browser." };
+  }
+  const host = u.hostname.toLowerCase();
+  if (host === "shp.ee" || host === "id.shp.ee") {
+    return {
+      ok: false,
+      message: `Link pendek ${host} belum didukung. Buka dulu produknya, lalu salin link dari bilah alamat.`,
+    };
+  }
+  if (host !== "shopee.co.id" && host !== "www.shopee.co.id") {
+    return { ok: false, message: "Itu bukan link Shopee." };
+  }
+  const path = u.pathname.replace(/\/+$/, "");
+  const productMatch = path.match(/^\/product\/(\d+)\/(\d+)/i);
+  if (productMatch) {
+    return { ok: true, url: `https://shopee.co.id/product/${productMatch[1]}/${productMatch[2]}` };
+  }
+  const itemMatch = path.match(/^\/([^/]+-i\.\d+\.\d+)/i);
+  if (itemMatch) {
+    return { ok: true, url: `https://shopee.co.id/${itemMatch[1]}` };
+  }
+  return {
+    ok: false,
+    message: "Link harus berbentuk shopee.co.id/nama-produk-i.123.456 atau shopee.co.id/product/123/456.",
+  };
+}
+
 export const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()

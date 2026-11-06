@@ -74,21 +74,31 @@ async function startJob(cmd, dashTabId) {
     return;
   }
 
+  const market = cmd.market || "tokopedia";
   let url;
   try {
     const u = new URL(cmd.url);
-    if (u.protocol !== "https:" || u.hostname !== "www.tokopedia.com") throw new Error("bad");
+    if (u.protocol !== "https:") throw new Error("bad");
+    if (market === "tokopedia") {
+      if (u.hostname !== "www.tokopedia.com") throw new Error("bad");
+    } else if (market === "shopee") {
+      if (u.hostname !== "shopee.co.id") throw new Error("bad");
+    } else {
+      throw new Error("bad");
+    }
     url = u.href;
   } catch (_) {
-    emit(dashTabId, { type: "ERROR", jobId: cmd.jobId, message: "Link itu bukan halaman Tokopedia." });
+    const label = market === "shopee" ? "Shopee" : "Tokopedia";
+    emit(dashTabId, { type: "ERROR", jobId: cmd.jobId, message: `Link itu bukan halaman ${label}.` });
     return;
   }
 
   const tab = await chrome.tabs.create({ url, active: false });
-  await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id });
+  await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id, market });
 
+  const label = market === "shopee" ? "Shopee" : "Tokopedia";
   const loaded = await waitForLoad(tab.id);
-  if (!loaded) return failJob("Halaman Tokopedia tidak selesai dimuat dalam 45 detik.");
+  if (!loaded) return failJob(`Halaman ${label} tidak selesai dimuat dalam 45 detik.`);
 
   const options = {
     maxPages: clamp(cmd.options && cmd.options.maxPages, 1, 200, 10),
@@ -102,7 +112,7 @@ async function startJob(cmd, dashTabId) {
     } catch (_) {}
     await sleep(500);
   }
-  await failJob("Extension tidak bisa masuk ke halaman Tokopedia. Muat ulang extension, lalu coba lagi.");
+  await failJob(`Extension tidak bisa masuk ke halaman ${label}. Muat ulang extension, lalu coba lagi.`);
 }
 
 async function stopJob() {
@@ -159,10 +169,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const j = await getJob();
   if (j && tabId === j.scrapeTabId) {
+    const label = j.market === "shopee" ? "Shopee" : "Tokopedia";
     emit(j.dashTabId, {
       type: "ERROR",
       jobId: j.jobId,
-      message: "Tab Tokopedia ditutup sebelum pengambilan selesai.",
+      message: `Tab ${label} ditutup sebelum pengambilan selesai.`,
     });
     await setJob(null);
   }

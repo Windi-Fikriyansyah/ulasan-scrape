@@ -37,6 +37,16 @@ Dashboard  <--postMessage--  bridge.js  <--  background.js  <--  batch ulasan pe
 - Hasil disimpan di IndexedDB browser (tidak dikirim ke server mana pun).
 - Tab Tokopedia ditutup otomatis setelah selesai atau dihentikan.
 
+## Fitur Shopee (Aktif)
+
+Fitur pengambilan ulasan untuk **Shopee** (`shopee.co.id`) sudah aktif dengan alur kerja yang sama seperti Tokopedia:
+1. Pilih tab **Shopee** di dashboard.
+2. Salin link produk Shopee dari bilah alamat browser (format `shopee.co.id/<nama-produk>-i.<shopid>.<itemid>` atau `shopee.co.id/product/<shopid>/<itemid>`). Link pendek `shp.ee` belum didukung langsung; buka terlebih dahulu di browser lalu salin URL lengkapnya.
+3. Tempel link di dashboard dan klik **Mulai ambil**. Extension akan membuka tab latar belakang, membaca ulasan dan foto, lalu mengirimkannya secara langsung ke dashboard.
+4. Riwayat tersimpan di IndexedDB terpisah dari Tokopedia dan bisa disaring, diurutkan, serta diekspor ke CSV/JSON (dengan kolom `foto_profil` terpisah dari `foto`).
+
+> **Catatan Penting:** Shopee sering meminta verifikasi bot atau login. Jika muncul pesan error bahwa Shopee meminta login/verifikasi, buka `shopee.co.id` di tab browser biasa, lakukan login dan selesaikan verifikasi, lalu coba ambil ulasan kembali. Jangan lupa untuk **Muat ulang (Reload)** extension di `chrome://extensions` setelah ada perubahan manifest/kode extension.
+
 ## Memakai alamat dashboard lain
 
 Extension hanya menyambung ke `localhost:3000`, `127.0.0.1:3000`, dan `localhost:3001`. Kalau dashboard
