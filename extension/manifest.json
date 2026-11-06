@@ -6,13 +6,16 @@
   "permissions": [
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "power",
+    "scripting"
   ],
   "host_permissions": [
     "https://www.tokopedia.com/*",
     "https://shopee.co.id/*",
     "https://www.google.com/maps/*",
-    "https://www.facebook.com/*"
+    "https://*.facebook.com/*",
+    "https://facebook.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -60,7 +63,8 @@
     },
     {
       "matches": [
-        "https://www.facebook.com/*"
+        "https://*.facebook.com/*",
+        "https://facebook.com/*"
       ],
       "js": [
         "fb-hook.js"
@@ -70,7 +74,8 @@
     },
     {
       "matches": [
-        "https://www.facebook.com/*"
+        "https://*.facebook.com/*",
+        "https://facebook.com/*"
       ],
       "js": [
         "fb-groups.js"
@@ -79,7 +84,8 @@
     },
     {
       "matches": [
-        "https://www.facebook.com/*"
+        "https://*.facebook.com/*",
+        "https://facebook.com/*"
       ],
       "js": [
         "fb-poster.js"

@@ -30,12 +30,12 @@ async function setJob(j) {
   try {
     if (j) await chrome.storage.session.set({ job: j });
     else await chrome.storage.session.remove("job");
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function emit(tabId, event) {
   if (tabId == null) return;
-  chrome.tabs.sendMessage(tabId, { kind: "tkp-event", event }).catch(() => {});
+  chrome.tabs.sendMessage(tabId, { kind: "tkp-event", event }).catch(() => { });
 }
 
 function waitForLoad(tabId, timeout = 45000) {
@@ -61,7 +61,7 @@ function waitForLoad(tabId, timeout = 45000) {
 async function endJob(j) {
   await setJob(null);
   if (j && j.scrapeTabId) {
-    chrome.tabs.remove(j.scrapeTabId).catch(() => {});
+    chrome.tabs.remove(j.scrapeTabId).catch(() => { });
   }
 }
 
@@ -124,7 +124,7 @@ async function startJob(cmd, dashTabId) {
     try {
       const r = await chrome.tabs.sendMessage(tab.id, { kind: "tkp-start", options });
       if (r && r.ok) return;
-    } catch (_) {}
+    } catch (_) { }
     await sleep(500);
   }
   await failJob(`Extension tidak bisa masuk ke halaman ${label}. Muat ulang extension, lalu coba lagi.`);
@@ -142,7 +142,7 @@ async function stopJob() {
     return;
   }
   if (j.scrapeTabId) {
-    chrome.tabs.sendMessage(j.scrapeTabId, { kind: "tkp-stop" }).catch(() => {});
+    chrome.tabs.sendMessage(j.scrapeTabId, { kind: "tkp-stop" }).catch(() => { });
   }
 }
 
@@ -160,7 +160,7 @@ async function loadFbFetchStorage() {
     const s = await chrome.storage.local.get(["fbFetchJob", "fbFetchBuffer"]);
     if (s.fbFetchJob) fbFetchJob = s.fbFetchJob;
     if (Array.isArray(s.fbFetchBuffer)) fbFetchBuffer = s.fbFetchBuffer;
-  } catch (_) {}
+  } catch (_) { }
 }
 loadFbFetchStorage();
 
@@ -168,13 +168,13 @@ function scheduleSaveFbFetchStorage(immediate = false) {
   if (immediate) {
     if (fbSaveStorageTimer) clearTimeout(fbSaveStorageTimer);
     fbSaveStorageTimer = null;
-    chrome.storage.local.set({ fbFetchJob, fbFetchBuffer }).catch(() => {});
+    chrome.storage.local.set({ fbFetchJob, fbFetchBuffer }).catch(() => { });
     return;
   }
   if (!fbSaveStorageTimer) {
     fbSaveStorageTimer = setTimeout(() => {
       fbSaveStorageTimer = null;
-      chrome.storage.local.set({ fbFetchJob, fbFetchBuffer }).catch(() => {});
+      chrome.storage.local.set({ fbFetchJob, fbFetchBuffer }).catch(() => { });
     }, 1000);
   }
 }
@@ -211,11 +211,27 @@ async function startFbGroups(cmd, dashTabId) {
   const current = await getJob();
   const isFbActive = fbFetchJob && (fbFetchJob.state === "berjalan" || fbFetchJob.state === "tertahan");
   if (current || isFbActive) {
-    emit(dashTabId, {
-      type: "ERROR",
-      message: "Masih ada proses lain yang berjalan. Tunggu selesai atau hentikan dulu.",
-    });
-    return;
+    let tabExists = false;
+    if (fbFetchJob && fbFetchJob.tabId) {
+      try {
+        const t = await chrome.tabs.get(fbFetchJob.tabId);
+        if (t) tabExists = true;
+      } catch (_) { }
+    }
+    const isStale = Date.now() - (fbFetchJob?.updatedAt || 0) > 2 * 60 * 1000;
+    if (!tabExists || isStale) {
+      if (fbFetchJob && fbFetchJob.tabId) {
+        chrome.tabs.remove(fbFetchJob.tabId).catch(() => { });
+      }
+      fbFetchJob = null;
+      await setJob(null);
+    } else {
+      emit(dashTabId, {
+        type: "ERROR",
+        message: "Masih ada proses lain yang berjalan. Tunggu selesai atau hentikan dulu.",
+      });
+      return;
+    }
   }
 
   const url = "https://www.facebook.com/groups/joins/";
@@ -225,7 +241,7 @@ async function startFbGroups(cmd, dashTabId) {
   try {
     tab = await chrome.tabs.create({ url, active: false });
     if (tab && tab.id) {
-      chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
+      chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => { });
     }
   } catch (err) {
     emit(dashTabId, { type: "ERROR", message: "Gagal membuka tab Facebook: " + err.message });
@@ -269,7 +285,7 @@ async function startFbGroups(cmd, dashTabId) {
       });
       emitFbFetchState();
       if (fbFetchJob.tabId) {
-        chrome.tabs.remove(fbFetchJob.tabId).catch(() => {});
+        chrome.tabs.remove(fbFetchJob.tabId).catch(() => { });
       }
       await setJob(null);
     }
@@ -283,21 +299,39 @@ async function startFbGroups(cmd, dashTabId) {
     scheduleSaveFbFetchStorage(true);
     emit(dashTabId, { type: "ERROR", message: "Halaman grup Facebook tidak selesai dimuat." });
     emitFbFetchState();
-    if (tab.id) chrome.tabs.remove(tab.id).catch(() => {});
+    if (tab.id) chrome.tabs.remove(tab.id).catch(() => { });
     await setJob(null);
     return;
   }
 
   // Inisiasi pengumpulan grup
-  for (let i = 0; i < 20; i++) {
+  let started = false;
+  for (let i = 0; i < 30; i++) {
     try {
-      const r = await chrome.tabs.sendMessage(tab.id, { kind: "fb-groups-start" });
-      if (r && r.ok) return;
-    } catch (_) {}
-    await sleep(600);
+      const r = await chrome.tabs.sendMessage(tab.id, {
+        kind: "fb-groups-start",
+        runId: fbFetchJob.id,
+      });
+      if (r && r.ok) {
+        started = true;
+        fbFetchJob.started = true;
+        break;
+      }
+    } catch (_) {
+      // Jika content script belum terpasang di tab latar belakang, injeksi langsung
+      if (i === 3 || i === 8) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ["fb-groups.js"],
+          });
+        } catch (_) { }
+      }
+    }
+    await sleep(700);
   }
 
-  if (fbFetchJob && fbFetchJob.found > 0) return;
+  if (started || (fbFetchJob && fbFetchJob.found > 0)) return;
 
   if (fbGroupsWatchdog) clearTimeout(fbGroupsWatchdog);
   fbFetchJob.state = "error";
@@ -305,7 +339,7 @@ async function startFbGroups(cmd, dashTabId) {
   scheduleSaveFbFetchStorage(true);
   emit(dashTabId, { type: "ERROR", message: "Extension tidak dapat berkomunikasi dengan halaman Facebook." });
   emitFbFetchState();
-  if (tab.id) chrome.tabs.remove(tab.id).catch(() => {});
+  if (tab.id) chrome.tabs.remove(tab.id).catch(() => { });
   await setJob(null);
 }
 
@@ -321,11 +355,14 @@ async function stopFbGroups() {
     scheduleSaveFbFetchStorage(true);
     emitFbFetchState();
     if (fbFetchJob.tabId) {
-      chrome.tabs.sendMessage(fbFetchJob.tabId, { kind: "fb-groups-stop" }).catch(() => {});
+      chrome.tabs.sendMessage(fbFetchJob.tabId, {
+        kind: "fb-groups-stop",
+        runId: fbFetchJob.id,
+      }).catch(() => { });
     }
     await sleep(300);
     if (fbFetchJob.tabId) {
-      chrome.tabs.remove(fbFetchJob.tabId).catch(() => {});
+      chrome.tabs.remove(fbFetchJob.tabId).catch(() => { });
       fbFetchJob.tabId = undefined;
     }
   }
@@ -408,7 +445,7 @@ async function stopAutopostRun() {
   autopostState.stopped = true;
   autopostState.active = false;
   if (autopostState.activeTabId) {
-    chrome.tabs.remove(autopostState.activeTabId).catch(() => {});
+    chrome.tabs.remove(autopostState.activeTabId).catch(() => { });
   }
   emit(autopostState.dashTabId, {
     type: "FB_STATUS",
@@ -481,7 +518,7 @@ async function runAutopostLoop() {
               started = true;
               break;
             }
-          } catch (_) {}
+          } catch (_) { }
           await sleep(700);
         }
 
@@ -517,7 +554,7 @@ async function runAutopostLoop() {
       };
     } finally {
       if (targetTab) {
-        chrome.tabs.remove(targetTab.id).catch(() => {});
+        chrome.tabs.remove(targetTab.id).catch(() => { });
         state.activeTabId = null;
       }
     }
@@ -634,7 +671,7 @@ async function handleScrape(msg, senderTabId) {
         if (msg.found != null) fbFetchJob.found = msg.found;
         if (msg.step != null) fbFetchJob.step = msg.step;
         if (msg.state === "tertahan" && fbFetchJob.windowId) {
-          chrome.windows.update(fbFetchJob.windowId, { drawAttention: true }).catch(() => {});
+          chrome.windows.update(fbFetchJob.windowId, { drawAttention: true }).catch(() => { });
         }
         scheduleSaveFbFetchStorage(true);
         emitFbFetchState();
@@ -680,11 +717,11 @@ async function handleScrape(msg, senderTabId) {
         });
         emitFbFetchState();
         if (fbFetchJob.tabId) {
-          chrome.tabs.remove(fbFetchJob.tabId).catch(() => {});
+          chrome.tabs.remove(fbFetchJob.tabId).catch(() => { });
           fbFetchJob.tabId = undefined;
         }
         if (fbFetchJob.dashTabId) {
-          chrome.tabs.update(fbFetchJob.dashTabId, { active: true }).catch(() => {});
+          chrome.tabs.update(fbFetchJob.dashTabId, { active: true }).catch(() => { });
         }
       } else {
         emit(j.dashTabId, {
@@ -694,7 +731,7 @@ async function handleScrape(msg, senderTabId) {
           diag: msg.diag,
         });
         if (j.dashTabId) {
-          chrome.tabs.update(j.dashTabId, { active: true }).catch(() => {});
+          chrome.tabs.update(j.dashTabId, { active: true }).catch(() => { });
         }
       }
       await endJob(j);
@@ -720,7 +757,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       else if (cmd.type === "FB_STOP_FETCH_GROUPS" || cmd.type === "FB_FETCH_STOP") await stopFbGroups();
       else if (cmd.type === "FB_FETCH_SHOW") {
         if (fbFetchJob && fbFetchJob.tabId) {
-          chrome.tabs.update(fbFetchJob.tabId, { active: true }).catch(() => {});
+          chrome.tabs.update(fbFetchJob.tabId, { active: true }).catch(() => { });
         }
       } else if (cmd.type === "FB_FETCH_STATUS") {
         if (fbFetchJob) {
@@ -781,7 +818,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
         emitFbFetchState();
       }
       if (j.dashTabId) {
-        chrome.tabs.update(j.dashTabId, { active: true }).catch(() => {});
+        chrome.tabs.update(j.dashTabId, { active: true }).catch(() => { });
       }
       await setJob(null);
     } else {
@@ -800,18 +837,21 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (fbFetchJob && (fbFetchJob.state === "berjalan" || fbFetchJob.state === "tertahan")) {
     if (tabId === fbFetchJob.tabId && changeInfo.status === "complete") {
-      if ((fbFetchJob.reloadCount || 0) < 2) {
-        fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
-        await sleep(1000);
-        chrome.tabs.sendMessage(tabId, { kind: "fb-groups-start" }).catch(() => {});
+        if (!fbFetchJob.started && (fbFetchJob.reloadCount || 0) < 2) {
+          fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
+          await sleep(1000);
+          chrome.tabs.sendMessage(tabId, {
+            kind: "fb-groups-start",
+            runId: fbFetchJob.id,
+          }).catch(() => { });
+        }
       }
     }
-  }
-});
+  });
 
 try {
   chrome.alarms.create("fb-fetch-watchdog", { periodInMinutes: 1 });
-} catch (_) {}
+} catch (_) { }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "fb-fetch-watchdog") return;
@@ -828,7 +868,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       });
       emitFbFetchState();
       if (fbFetchJob.windowId) {
-        chrome.windows.remove(fbFetchJob.windowId).catch(() => {});
+        chrome.windows.remove(fbFetchJob.windowId).catch(() => { });
         fbFetchJob.windowId = undefined;
       }
       await setJob(null);
@@ -838,7 +878,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (Date.now() - (fbFetchJob.startedAt || 0) > 24 * 60 * 60 * 1000) {
     fbFetchJob = null;
     fbFetchBuffer = [];
-    chrome.storage.local.remove(["fbFetchJob", "fbFetchBuffer"]).catch(() => {});
+    chrome.storage.local.remove(["fbFetchJob", "fbFetchBuffer"]).catch(() => { });
   }
 });
 

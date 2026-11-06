@@ -1,10 +1,8 @@
 // Content script: membaca daftar SEMUA grup Facebook yang diikuti di /groups/joins/
 (() => {
-  if (window.__fbGroupsLoaded) return;
-  window.__fbGroupsLoaded = true;
-
   let isRunning = false;
   let isStopped = false;
+  let activeRunId = null;
 
   const IGNORED_PATHS = new Set([
     "joins",
@@ -66,7 +64,7 @@
         let key = segs[idx + 1];
         try {
           key = decodeURIComponent(key);
-        } catch (_) {}
+        } catch (_) { }
 
         if (IGNORED_PATHS.has(key.toLowerCase())) {
           return { ok: false, reason: "jalur_terlarang", href };
@@ -78,7 +76,7 @@
           url: `https://www.facebook.com/groups/${key}/`,
         };
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return { ok: false, reason: "bukan_grup", href };
   }
@@ -216,8 +214,14 @@
     );
   }
 
-  async function startCollection() {
-    if (isRunning) return;
+  async function startCollection(runId) {
+    if (isRunning) {
+      // Jika proses pengambilan sudah aktif berjalan, abaikan pemicu baru
+      return;
+    }
+
+    activeRunId = runId || ("run_" + Date.now().toString(36));
+    const currentRunId = activeRunId;
     isRunning = true;
     isStopped = false;
 
@@ -234,266 +238,241 @@
     let skippedDuplicate = 0;
     const sampleSkipped = [];
 
-    const cpEarly = detectCheckpoint();
-    if (cpEarly) {
-      isRunning = false;
-      chrome.runtime.sendMessage({
-        kind: "tkp-scrape",
-        type: "error",
-        message: cpEarly,
-      }).catch(() => {});
-      return;
-    }
+    try {
+      await tkpSleep(1500);
 
-    await tkpSleep(2000);
+      const cpEarly = detectCheckpoint();
+      if (cpEarly) {
+        chrome.runtime.sendMessage({
+          kind: "tkp-scrape",
+          type: "error",
+          message: cpEarly,
+          runId: currentRunId,
+        }).catch(() => { });
+        return;
+      }
 
-    let scroller = findScrollContainer();
-    let consecutiveNoNew = 0;
-    let steps = 0;
-    const maxSteps = 600;
-    const maxDurationMs = 8 * 60 * 1000;
-    let stopReason = "akhir_daftar";
+      let scroller = findScrollContainer();
+      let consecutiveNoNew = 0;
+      let steps = 0;
+      const maxSteps = 600;
+      const maxDurationMs = 12 * 60 * 1000;
+      let stopReason = "tidak_ada_grup";
 
-    function harvest() {
-      const anchors = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
-      let newCount = 0;
+      function harvest() {
+        const anchors = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
+        let newCount = 0;
 
-      for (const a of anchors) {
-        const norm = normalizeUrl(a.href || a.getAttribute("href"));
-        if (!norm.ok) {
-          if (norm.reason === "jalur_terlarang") skippedIgnored++;
-          else skippedNotGroup++;
-          if (sampleSkipped.length < 5 && norm.href) sampleSkipped.push(norm.href);
-          continue;
-        }
-
-        const id = norm.id;
-        const name = extractNameFromAnchor(a, id);
-
-        if (harvested.has(id)) {
-          skippedDuplicate++;
-          const existing = harvested.get(id);
-          if (existing.name.startsWith("Grup ") && !name.startsWith("Grup ")) {
-            existing.name = name;
+        for (const a of anchors) {
+          const norm = normalizeUrl(a.href || a.getAttribute("href"));
+          if (!norm.ok) {
+            if (norm.reason === "jalur_terlarang") skippedIgnored++;
+            else skippedNotGroup++;
+            if (sampleSkipped.length < 5 && norm.href) sampleSkipped.push(norm.href);
+            continue;
           }
-          continue;
-        }
 
-        const newGroup = {
-          id,
-          name,
-          url: norm.url,
-          source: "auto",
-          createdAt: Date.now(),
-        };
+          const id = norm.id;
+          const name = extractNameFromAnchor(a, id);
 
-        harvested.set(id, newGroup);
-        newSinceLastBatch.push(newGroup);
-        newCount++;
-      }
-
-      return newCount;
-    }
-
-    // Tunggu komponen daftar grup dirender oleh Facebook (maksimal 8 detik)
-    for (let waitCount = 0; waitCount < 16; waitCount++) {
-      harvest();
-      if (harvested.size > 0 || isStopped) break;
-      window.scrollBy({ top: 150, left: 0, behavior: "instant" });
-      try {
-        window.dispatchEvent(new Event("scroll", { bubbles: true }));
-      } catch (_) {}
-      clickSeeMoreButtons();
-      await tkpSleep(500);
-    }
-
-    if (newSinceLastBatch.length > 0) {
-      chrome.runtime.sendMessage({
-        kind: "tkp-scrape",
-        type: "fb-groups",
-        found: harvested.size,
-        groups: [...newSinceLastBatch],
-        step: steps,
-      }).catch(() => {});
-      newSinceLastBatch = [];
-    }
-
-    // Loop scroll bertahap (berjalan terus di tab latar belakang)
-    while (!isStopped && steps < maxSteps) {
-      if (Date.now() - startTime > maxDurationMs) {
-        stopReason = "batas_waktu";
-        break;
-      }
-
-      const cp = detectCheckpoint();
-      if (cp) {
-        stopReason = "checkpoint";
-        break;
-      }
-
-      steps++;
-
-      if (steps % 10 === 0) {
-        scroller = findScrollContainer();
-      }
-
-      const clientH = scroller.clientHeight || window.innerHeight || 800;
-      const stepDistance = Math.max(500, Math.floor(clientH * 0.85));
-
-      // 1. Scroll kontainer spesifik & window secara instan
-      if (scroller && scroller !== document.documentElement && scroller !== document.body) {
-        scroller.scrollTop += stepDistance;
-      }
-      window.scrollBy({ top: stepDistance, left: 0, behavior: "instant" });
-      if (document.documentElement) document.documentElement.scrollTop += stepDistance;
-      if (document.body) document.body.scrollTop += stepDistance;
-
-      // 2. Arahkan anchor grup terakhir atau sentinel loading ke viewport untuk memicu IntersectionObserver
-      const anchors = document.querySelectorAll('a[href*="/groups/"]');
-      if (anchors.length > 0) {
-        try {
-          anchors[anchors.length - 1].scrollIntoView({ block: "end", inline: "nearest" });
-        } catch (_) {}
-      }
-
-      const spinners = document.querySelectorAll(
-        '[role="progressbar"], [aria-busy="true"], [data-visualcompletion="loading-state"]'
-      );
-      if (spinners.length > 0) {
-        try {
-          spinners[spinners.length - 1].scrollIntoView({ block: "end", inline: "nearest" });
-        } catch (_) {}
-      }
-
-      // 3. Picu synthetic scroll dan wheel events agar listener React/Relay Facebook aktif di tab latar belakang
-      try {
-        window.dispatchEvent(new Event("scroll", { bubbles: true }));
-        document.dispatchEvent(new Event("scroll", { bubbles: true }));
-        if (scroller && scroller !== document.documentElement && scroller !== document.body) {
-          scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
-        }
-        (scroller || window).dispatchEvent(new WheelEvent("wheel", { deltaY: stepDistance, bubbles: true }));
-      } catch (_) {}
-
-      clickSeeMoreButtons();
-
-      await tkpSleep(900);
-
-      if (isLoadingIndicatorPresent()) {
-        await tkpSleep(1400);
-      }
-
-      const newFound = harvest();
-
-      if (newFound > 0) {
-        consecutiveNoNew = 0;
-        if (newSinceLastBatch.length > 0) {
-          chrome.runtime.sendMessage({
-            kind: "tkp-scrape",
-            type: "fb-groups",
-            found: harvested.size,
-            groups: [...newSinceLastBatch],
-            step: steps,
-          }).catch(() => {});
-          newSinceLastBatch = [];
-        }
-      } else {
-        consecutiveNoNew++;
-
-        // Jika beberapa putaran belum bertambah, scroll paksa ke paling bawah
-        if (consecutiveNoNew % 3 === 0) {
-          if (scroller && scroller !== document.documentElement && scroller !== document.body) {
-            scroller.scrollTop = scroller.scrollHeight;
+          if (harvested.has(id)) {
+            skippedDuplicate++;
+            const existing = harvested.get(id);
+            if (existing.name.startsWith("Grup ") && !name.startsWith("Grup ")) {
+              existing.name = name;
+            }
+            continue;
           }
-          window.scrollTo(0, document.body ? document.body.scrollHeight : 999999);
-          clickSeeMoreButtons();
+
+          const newGroup = {
+            id,
+            name,
+            url: norm.url,
+            source: "auto",
+            createdAt: Date.now(),
+          };
+
+          harvested.set(id, newGroup);
+          newSinceLastBatch.push(newGroup);
+          newCount++;
         }
 
-        // Delay bertahap agar Facebook punya waktu memuat data di tab latar belakang
-        await tkpSleep(Math.min(2500, 900 + consecutiveNoNew * 150));
+        return newCount;
       }
 
-      const scrollH = scroller.scrollHeight || (document.documentElement ? document.documentElement.scrollHeight : 0);
-      const scrollT = scroller.scrollTop || window.scrollY || 0;
-      const isAtBottom = (scrollT + clientH >= scrollH - 60);
+      // Tunggu hingga grup pertama dirender
+      for (let waitCount = 0; waitCount < 30; waitCount++) {
+        if (isStopped || activeRunId !== currentRunId) break;
+        harvest();
+        if (harvested.size > 0) break;
+        clickSeeMoreButtons();
+        window.scrollBy({ top: 120, left: 0, behavior: "instant" });
+        await tkpSleep(500);
+      }
 
-      if (isEndOfListTextPresent()) {
+      if (newSinceLastBatch.length > 0) {
+        chrome.runtime.sendMessage({
+          kind: "tkp-scrape",
+          type: "fb-groups",
+          found: harvested.size,
+          groups: [...newSinceLastBatch],
+          step: steps,
+          runId: currentRunId,
+        }).catch(() => { });
+        newSinceLastBatch = [];
+      }
+
+      // Loop scroll bertahap
+      while (!isStopped && activeRunId === currentRunId && steps < maxSteps) {
+        if (Date.now() - startTime > maxDurationMs) {
+          stopReason = "batas_waktu";
+          break;
+        }
+
+        const cp = detectCheckpoint();
+        if (cp) {
+          stopReason = "checkpoint";
+          break;
+        }
+
+        if (document.visibilityState !== "visible") {
+          hiddenCount++;
+        }
+
+        steps++;
+
+        if (steps % 10 === 0) {
+          scroller = findScrollContainer();
+        }
+
+        const clientH = scroller.clientHeight || window.innerHeight || 800;
+        const stepDistance = Math.max(450, Math.floor(clientH * 0.8));
+
+        if (scroller !== document.documentElement && scroller !== document.body) {
+          scroller.scrollTop += stepDistance;
+        }
+        window.scrollBy({ top: stepDistance, left: 0, behavior: "instant" });
+
+        try {
+          if (scroller && scroller.dispatchEvent) {
+            scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+          }
+          window.dispatchEvent(new Event("scroll"));
+        } catch (_) { }
+
+        clickSeeMoreButtons();
+
+        await tkpSleep(850);
+
+        if (isLoadingIndicatorPresent()) {
+          await tkpSleep(1400);
+        }
+
+        const newFound = harvest();
+
+        if (newFound > 0) {
+          consecutiveNoNew = 0;
+          if (newSinceLastBatch.length > 0) {
+            chrome.runtime.sendMessage({
+              kind: "tkp-scrape",
+              type: "fb-groups",
+              found: harvested.size,
+              groups: [...newSinceLastBatch],
+              step: steps,
+              runId: currentRunId,
+            }).catch(() => { });
+            newSinceLastBatch = [];
+          }
+        } else {
+          consecutiveNoNew++;
+
+          if (consecutiveNoNew % 3 === 0) {
+            if (scroller && scroller !== document.documentElement && scroller !== document.body) {
+              scroller.scrollTop = scroller.scrollHeight;
+            }
+            window.scrollTo(0, document.body ? document.body.scrollHeight : 999999);
+            try {
+              if (scroller && scroller.dispatchEvent) {
+                scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+              }
+              window.dispatchEvent(new Event("scroll"));
+            } catch (_) { }
+            clickSeeMoreButtons();
+          }
+
+          await tkpSleep(Math.min(2500, 800 + consecutiveNoNew * 150));
+        }
+
+        const scrollH = scroller.scrollHeight || (document.documentElement ? document.documentElement.scrollHeight : 0);
+        const scrollT = scroller.scrollTop || window.scrollY || 0;
+        const isAtBottom = (scrollT + clientH >= scrollH - 60);
+
+        if (isEndOfListTextPresent()) {
+          stopReason = "akhir_daftar";
+          break;
+        }
+
+        if (consecutiveNoNew >= 25 && isAtBottom && !isLoadingIndicatorPresent()) {
+          stopReason = harvested.size > 0 ? "akhir_daftar" : "tidak_ada_grup";
+          break;
+        }
+
+        if (consecutiveNoNew >= 45 && !isLoadingIndicatorPresent()) {
+          stopReason = harvested.size > 0 ? "tidak_bertambah" : "tidak_ada_grup";
+          break;
+        }
+      }
+
+      if (isStopped) {
+        stopReason = "dihentikan";
+      } else if (stopReason === "tidak_ada_grup" && harvested.size > 0) {
         stopReason = "akhir_daftar";
-        break;
       }
 
-      if (consecutiveNoNew >= 10 && isAtBottom && !isLoadingIndicatorPresent()) {
-        stopReason = "akhir_daftar";
-        break;
-      }
-
-      if (consecutiveNoNew >= 25 && !isLoadingIndicatorPresent()) {
-        stopReason = "tidak_bertambah";
-        break;
-      }
-    }
-
-    if (isStopped) {
-      stopReason = "dihentikan";
-    }
-
-    if (newSinceLastBatch.length > 0) {
       chrome.runtime.sendMessage({
         kind: "tkp-scrape",
-        type: "fb-groups",
-        found: harvested.size,
-        groups: [...newSinceLastBatch],
-        step: steps,
-      }).catch(() => {});
-      newSinceLastBatch = [];
-    }
-
-    isRunning = false;
-
-    chrome.runtime.sendMessage({
-      kind: "tkp-scrape",
-      type: "fb-groups-done",
-      total: harvested.size,
-      stopped: isStopped,
-      diag: {
-        stopReason,
+        type: "fb-groups-done",
         total: harvested.size,
-        steps,
-        durationMs: Date.now() - startTime,
-        hiddenDurationMs,
-        hiddenCount,
-        visibilityStart,
-        visibilityEnd: document.visibilityState,
-        scrollerTag: scroller.tagName || "WINDOW",
-        scrollerRole: scroller.getAttribute ? (scroller.getAttribute("role") || "") : "",
-        skipped: {
-          notGroup: skippedNotGroup,
-          ignoredPath: skippedIgnored,
-          duplicate: skippedDuplicate,
+        stopped: isStopped,
+        runId: currentRunId,
+        diag: {
+          jalur: "scroll",
+          stopReason,
+          total: harvested.size,
+          steps,
+          durationMs: Date.now() - startTime,
+          hiddenDurationMs,
+          hiddenCount,
+          visibilityStart,
+          visibilityEnd: document.visibilityState,
+          scrollerTag: scroller.tagName || "WINDOW",
+          scrollerRole: scroller.getAttribute ? (scroller.getAttribute("role") || "") : "",
+          skipped: {
+            notGroup: skippedNotGroup,
+            ignoredPath: skippedIgnored,
+            duplicate: skippedDuplicate,
+          },
+          sampleSkipped: sampleSkipped.slice(0, 5),
         },
-        sampleSkipped: sampleSkipped.slice(0, 5),
-      },
-    }).catch(() => {});
+      }).catch(() => { });
+    } finally {
+      if (activeRunId === currentRunId) {
+        isRunning = false;
+      }
+    }
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
     if (msg.kind === "fb-groups-start") {
-      startCollection();
+      startCollection(msg.runId);
       sendResponse({ ok: true });
     } else if (msg.kind === "fb-groups-stop") {
-      isStopped = true;
-      isRunning = false;
+      if (!msg.runId || msg.runId === activeRunId) {
+        isStopped = true;
+        isRunning = false;
+      }
       sendResponse({ ok: true });
     }
   });
-
-  // Jalankan otomatis bila halaman berada di /groups/joins/ tanpa harus menunggu pesan manual
-  if (location.pathname.includes("/groups/joins")) {
-    setTimeout(() => {
-      if (!isRunning && !isStopped) {
-        startCollection();
-      }
-    }, 1200);
-  }
 })();

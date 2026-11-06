@@ -4,6 +4,22 @@
   if (window.__fbHookInitialized) return;
   window.__fbHookInitialized = true;
 
+  // Simpan nilai asli getter visibilitas sebelum di-override
+  let realHiddenGetter;
+  let realVisibilityGetter;
+  try {
+    realHiddenGetter = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get;
+    realVisibilityGetter = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get;
+  } catch (_) {}
+
+  const isReallyHidden = () => {
+    try {
+      if (realHiddenGetter) return realHiddenGetter.call(document);
+      if (realVisibilityGetter) return realVisibilityGetter.call(document) === "hidden";
+    } catch (_) {}
+    return false;
+  };
+
   // 1. Visibilitas & Focus palsu agar Facebook tidak menunda rendering
   try {
     Object.defineProperty(document, "visibilityState", {
@@ -21,14 +37,25 @@
   try {
     const origRAF = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
     window.requestAnimationFrame = function (cb) {
-      if (document.hidden || document.visibilityState === "hidden") {
+      if (isReallyHidden()) {
         return setTimeout(() => {
           try {
             cb(performance.now());
           } catch (_) {}
         }, 16);
       }
-      return origRAF ? origRAF(cb) : setTimeout(cb, 16);
+      let called = false;
+      const safeCb = (time) => {
+        if (called) return;
+        called = true;
+        clearTimeout(timer);
+        try {
+          cb(time);
+        } catch (_) {}
+      };
+      // Timer pengaman 80ms bila browser mendadak menahan rAF di tab latar belakang
+      const timer = setTimeout(() => safeCb(performance.now()), 80);
+      return origRAF ? origRAF(safeCb) : timer;
     };
   } catch (_) {}
 
@@ -36,21 +63,31 @@
   try {
     const origRIC = window.requestIdleCallback ? window.requestIdleCallback.bind(window) : null;
     window.requestIdleCallback = function (cb, options) {
-      if (document.hidden || document.visibilityState === "hidden") {
+      if (isReallyHidden()) {
         return setTimeout(() => {
           try {
             cb({
-              didTimeout: false,
+              didTimeout: true,
               timeRemaining: () => 50,
             });
           } catch (_) {}
         }, 50);
       }
-      return origRIC
-        ? origRIC(cb, options)
-        : setTimeout(() => {
-            cb({ didTimeout: false, timeRemaining: () => 50 });
-          }, 50);
+      let called = false;
+      const safeCb = (deadline) => {
+        if (called) return;
+        called = true;
+        clearTimeout(timer);
+        try {
+          cb(deadline);
+        } catch (_) {}
+      };
+      const timeoutVal = (options && options.timeout) || 150;
+      const timer = setTimeout(
+        () => safeCb({ didTimeout: true, timeRemaining: () => 50 }),
+        timeoutVal
+      );
+      return origRIC ? origRIC(safeCb, options) : timer;
     };
   } catch (_) {}
 
@@ -114,9 +151,10 @@
       Object.setPrototypeOf(ProxyIntersectionObserver, OriginalIO);
       window.IntersectionObserver = ProxyIntersectionObserver;
 
-      // Pemicu berkala untuk sentinel pagination di halaman /groups/
+      // Pemicu berkala untuk sentinel pagination di halaman /groups/ saat tab di latar belakang
       setInterval(() => {
         if (!location.pathname.includes("/groups")) return;
+        if (!isReallyHidden()) return; // Jika tab sedang aktif/visible, biarkan browser native bekerja
 
         for (const obs of activeObservers) {
           for (const target of obs._targets) {
@@ -151,7 +189,7 @@
             }
           }
         }
-      }, 1000);
+      }, 800);
     }
   } catch (_) {}
 })();
