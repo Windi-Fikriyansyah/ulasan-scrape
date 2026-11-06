@@ -78,6 +78,16 @@ Menu baru **Lead maps** di sidebar memungkinkan pengambilan data tempat usaha da
 7. Di halaman laporan, data tempat usaha dapat dicari, disaring berdasarkan ketersediaan nomor telepon / website / rating minimal, diurutkan, serta diekspor ke format CSV dan JSON. Tersedia juga diagnosa HTML untuk memeriksa struktur kartu Google Maps terkini.
 8. **Mode cepat:** Bila hanya memilih kolom dasar yang tertera di kartu atau URL (seperti Kategori, Rating, Jumlah ulasan, Koordinat, Link Maps), scraper bekerja jauh lebih cepat tanpa perlu membuka panel detail tiap tempat.
 
+## Fitur Autopost Grup (Facebook)
+
+Menu **Autopost grup** di sidebar memungkinkan pengiriman postingan otomatis ke banyak grup Facebook yang telah diikuti oleh akun pengguna:
+1. **Template Postingan:** Buat, ubah, gandakan, dan hapus template postingan. Dilengkapi dengan variabel dinamis `{nama_grup}`, `{tanggal}`, `{hari}`, batas hingga 5.000 karakter, serta lampiran hingga 4 gambar (maksimal total 4MB) dengan kompresi otomatis di browser. Dilengkapi simulasi tampilan *Live Preview*.
+2. **Ambil Semua Grup Otomatis:** Extension membuka tab baru Facebook (`https://www.facebook.com/groups/joins/`) di latar belakang dan mematikan auto-discard (`autoDiscardable: false`). Halaman di-scroll otomatis secara bertahap sampai benar-benar mencapai akhir daftar, dilengkapi pemicu scroll dan wheel events sintetis serta penyelarasan elemen agar proses tetap berjalan lancar walau pengguna berpindah ke tab lain atau membuka aplikasi lain di komputer. Status pengambilan dan antrean grup tersimpan secara persisten di `chrome.storage.local` dan dilengkapi replay buffer serta mekanisme ACK sehingga progres tidak hilang meski dashboard di-refresh atau ditutup dan dibuka kembali. Tab Facebook ditutup otomatis saat seluruh grup selesai diambil atau dihentikan.
+   - **Diagnosa & Pelaporan:** Selesai pengambilan, tersedia blok ringkasan diagnosa yang dapat disalin (*Salin diagnosa*) berisi alasan berhenti, total terbaca, langkah scroll, visibilitas tab, serta kontainer scroll yang terdeteksi. Bila ada masalah, cukup salin ringkasan diagnosa tersebut untuk analisa lebih lanjut.
+3. **Import Excel / CSV:** Pengguna dapat mengunggah file `.xlsx` atau `.csv` berisi link dan nama grup, melihat tinjauan validitas/duplikasi baris, serta mengunduh file contoh CSV.
+4. **Pilih Grup & Pengiriman Otomatis:** Pilih grup dari daftar (tersinkronisasi langsung dengan tab Kirim), atur jeda acak antar grup (minimal 30 detik, default 60–150 detik), batas harian aman (maksimal 40 postingan per 24 jam), serta **Mode Uji (Dry Run)** yang aktif secara default untuk memverifikasi kesiapan komposer tanpa menerbitkan postingan nyata.
+5. **Keamanan & Kontrol:** Dilengkapi modal konfirmasi sebelum pengiriman, indikator hitung mundur (*countdown timer*) per detik, tombol Jeda, Lanjutkan, Hentikan, deteksi otomatis verifikasi/checkpoint Facebook yang langsung menghentikan proses, serta ekspor laporan riwayat ke CSV dan fitur kirim ulang grup yang gagal.
+
 ## Memakai alamat dashboard lain
 
 Extension hanya menyambung ke `localhost:3000`, `127.0.0.1:3000`, dan `localhost:3001`. Kalau dashboard

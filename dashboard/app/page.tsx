@@ -24,6 +24,7 @@ import Report from "@/components/Report";
 import LeadCapture from "@/components/LeadCapture";
 import LeadArchive from "@/components/LeadArchive";
 import LeadReport from "@/components/LeadReport";
+import AutopostView from "@/components/autopost/AutopostView";
 
 const marketOf = (j: Job): Market => j.market ?? "tokopedia";
 const ERR_DISCONNECTED = "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.";
@@ -54,6 +55,14 @@ export default function Home() {
 
   const leadJobsRef = useRef<LeadJob[]>([]);
   const runningLeadRef = useRef<string | null>(null);
+
+  const autopostListenersRef = useRef<Set<(e: ExtEvent) => void>>(new Set());
+  const registerAutopostListener = (fn: (e: ExtEvent) => void) => {
+    autopostListenersRef.current.add(fn);
+    return () => {
+      autopostListenersRef.current.delete(fn);
+    };
+  };
 
   const commit = (next: Job[]) => {
     jobsRef.current = next;
@@ -196,6 +205,21 @@ export default function Home() {
             setFormError(e.message);
             setLeadFormError(e.message);
           }
+        }
+        for (const listener of autopostListenersRef.current) {
+          listener(e);
+        }
+        break;
+      }
+
+      case "FB_FETCH_STATE":
+      case "FB_GROUPS":
+      case "FB_GROUPS_DONE":
+      case "FB_TARGET":
+      case "FB_RUN":
+      case "FB_STATUS": {
+        for (const listener of autopostListenersRef.current) {
+          listener(e);
         }
         break;
       }
@@ -557,6 +581,14 @@ export default function Home() {
               </main>
             </div>
           </div>
+        )}
+
+        {menu === "autopost" && (
+          <AutopostView
+            isExtensionConnected={ext.status === "connected"}
+            sendToExtension={ext.send}
+            registerEventHandler={registerAutopostListener}
+          />
         )}
       </div>
     </div>

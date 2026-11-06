@@ -4,6 +4,7 @@ import type { ExtStatus } from "@/lib/bridge";
 export const MENUS = [
   { id: "ambil", label: "Ambil reviews" },
   { id: "lead", label: "Lead maps" },
+  { id: "autopost", label: "Autopost grup" },
 ] as const;
 export type MenuId = (typeof MENUS)[number]["id"];
 
