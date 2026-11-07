@@ -10,13 +10,13 @@
   try {
     realHiddenGetter = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get;
     realVisibilityGetter = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get;
-  } catch (_) {}
+  } catch (_) { }
 
   const isReallyHidden = () => {
     try {
       if (realHiddenGetter) return realHiddenGetter.call(document);
       if (realVisibilityGetter) return realVisibilityGetter.call(document) === "hidden";
-    } catch (_) {}
+    } catch (_) { }
     return false;
   };
 
@@ -31,7 +31,7 @@
       configurable: true,
     });
     document.hasFocus = () => true;
-  } catch (_) {}
+  } catch (_) { }
 
   // 2. Shim requestAnimationFrame agar tidak dibekukan Chrome di tab latar belakang
   try {
@@ -41,7 +41,7 @@
         return setTimeout(() => {
           try {
             cb(performance.now());
-          } catch (_) {}
+          } catch (_) { }
         }, 16);
       }
       let called = false;
@@ -51,13 +51,13 @@
         clearTimeout(timer);
         try {
           cb(time);
-        } catch (_) {}
+        } catch (_) { }
       };
       // Timer pengaman 80ms bila browser mendadak menahan rAF di tab latar belakang
       const timer = setTimeout(() => safeCb(performance.now()), 80);
       return origRAF ? origRAF(safeCb) : timer;
     };
-  } catch (_) {}
+  } catch (_) { }
 
   // 3. Shim requestIdleCallback agar Facebook tidak menunda fetch query halaman berikutnya di tab latar belakang
   try {
@@ -70,7 +70,7 @@
               didTimeout: true,
               timeRemaining: () => 50,
             });
-          } catch (_) {}
+          } catch (_) { }
         }, 50);
       }
       let called = false;
@@ -80,7 +80,7 @@
         clearTimeout(timer);
         try {
           cb(deadline);
-        } catch (_) {}
+        } catch (_) { }
       };
       const timeoutVal = (options && options.timeout) || 150;
       const timer = setTimeout(
@@ -89,7 +89,7 @@
       );
       return origRIC ? origRIC(safeCb, options) : timer;
     };
-  } catch (_) {}
+  } catch (_) { }
 
   // 4. Proxy IntersectionObserver agar pagination / sentinel Facebook terpanggil aktif di tab latar belakang
   try {
@@ -185,11 +185,95 @@
               };
               try {
                 obs._callback([entry], obs._instance);
-              } catch (_) {}
+              } catch (_) { }
             }
           }
         }
       }, 800);
     }
-  } catch (_) {}
+  } catch (_) { }
+
+  // 5. Pantau request GraphQL "buat postingan" agar autopost tahu kapan posting BENAR-BENAR selesai
+  try {
+    const POST_MUTATION_RE = /ComposerStoryCreate|StoryCreateMutation|ComposerPublish|GroupsCometComposer\w*Mutation/i;
+
+    const getFriendlyName = (body) => {
+      try {
+        if (!body) return "";
+        if (typeof body === "string") {
+          const m = body.match(/fb_api_req_friendly_name=([^&]+)/);
+          return m ? decodeURIComponent(m[1]) : (POST_MUTATION_RE.test(body) ? body.slice(0, 200) : "");
+        }
+        if (body instanceof URLSearchParams) return body.get("fb_api_req_friendly_name") || "";
+        if (body instanceof FormData) return String(body.get("fb_api_req_friendly_name") || "");
+      } catch (_) { }
+      return "";
+    };
+
+    const notify = (type, extra) => {
+      try {
+        window.postMessage(Object.assign({ __fbAutopostNet: true, type }, extra || {}), "*");
+      } catch (_) { }
+    };
+
+    const evaluate = (status, text) => {
+      const okStatus = status >= 200 && status < 300;
+      const body = text || "";
+      const hasStory = /story_create|"story"\s*:|"post_id"|"legacy_story_hideable_id"/.test(body);
+      let error = "";
+      if (!hasStory) {
+        const m = body.match(/"(?:summary|description|message)"\s*:\s*"([^"]{3,200})"/);
+        if (/"errors"\s*:\s*\[/.test(body) || /"error"\s*:\s*\d+/.test(body)) {
+          error = m ? m[1] : "Facebook mengembalikan error.";
+        }
+      }
+      return { ok: okStatus && !error, error: okStatus ? error : "HTTP " + status };
+    };
+
+    // XMLHttpRequest (jalur utama GraphQL Facebook)
+    const origOpen = XMLHttpRequest.prototype.open;
+    const origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__fbUrl = String(url || "");
+      return origOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function (body) {
+      try {
+        if (this.__fbUrl.includes("/api/graphql")) {
+          const name = getFriendlyName(body);
+          if (name && POST_MUTATION_RE.test(name)) {
+            notify("start", { name });
+            this.addEventListener("loadend", () => {
+              let text = "";
+              try { text = typeof this.responseText === "string" ? this.responseText : ""; } catch (_) { }
+              notify("done", Object.assign({ name }, evaluate(this.status, text)));
+            });
+          }
+        }
+      } catch (_) { }
+      return origSend.apply(this, arguments);
+    };
+
+    // fetch (cadangan)
+    const origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function (input, init) {
+        let name = "";
+        try {
+          const url = typeof input === "string" ? input : (input && input.url) || "";
+          if (url.includes("/api/graphql")) name = getFriendlyName(init && init.body);
+        } catch (_) { }
+        const p = origFetch.apply(this, arguments);
+        if (name && POST_MUTATION_RE.test(name)) {
+          notify("start", { name });
+          p.then((res) => {
+            res.clone().text()
+              .then((text) => notify("done", Object.assign({ name }, evaluate(res.status, text))))
+              .catch(() => notify("done", { name, ok: res.ok, error: res.ok ? "" : "HTTP " + res.status }));
+          }).catch((err) => notify("done", { name, ok: false, error: String(err && err.message || err) }));
+        }
+        return p;
+      };
+    }
+  } catch (_) { }
 })();

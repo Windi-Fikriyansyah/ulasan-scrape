@@ -532,8 +532,8 @@ async function runAutopostLoop() {
           const waitResult = await new Promise((resolve) => {
             const timeout = setTimeout(() => {
               chrome.runtime.onMessage.removeListener(listener);
-              resolve({ status: "failed", message: "Waktu tunggu proses posting grup habis (timeout 90s)." });
-            }, 90000);
+              resolve({ status: "failed", message: "Waktu tunggu proses posting grup habis (timeout 360s)." });
+            }, 360000);
 
             const listener = (msg) => {
               if (msg && msg.kind === "tkp-scrape" && msg.type === "fb-target-done") {
@@ -837,17 +837,17 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (fbFetchJob && (fbFetchJob.state === "berjalan" || fbFetchJob.state === "tertahan")) {
     if (tabId === fbFetchJob.tabId && changeInfo.status === "complete") {
-        if (!fbFetchJob.started && (fbFetchJob.reloadCount || 0) < 2) {
-          fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
-          await sleep(1000);
-          chrome.tabs.sendMessage(tabId, {
-            kind: "fb-groups-start",
-            runId: fbFetchJob.id,
-          }).catch(() => { });
-        }
+      if (!fbFetchJob.started && (fbFetchJob.reloadCount || 0) < 2) {
+        fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
+        await sleep(1000);
+        chrome.tabs.sendMessage(tabId, {
+          kind: "fb-groups-start",
+          runId: fbFetchJob.id,
+        }).catch(() => { });
       }
     }
-  });
+  }
+});
 
 try {
   chrome.alarms.create("fb-fetch-watchdog", { periodInMinutes: 1 });
