@@ -34,8 +34,19 @@ async function setJob(j) {
 }
 
 function emit(tabId, event) {
-  if (tabId == null) return;
-  chrome.tabs.sendMessage(tabId, { kind: "tkp-event", event }).catch(() => { });
+  if (tabId != null) {
+    chrome.tabs.sendMessage(tabId, { kind: "tkp-event", event }).catch(() => { });
+  }
+  // Broadcast ke seluruh tab dashboard yang terbuka agar event tidak hilang saat ganti tab / reload
+  try {
+    chrome.tabs.query({}).then((tabs) => {
+      for (const t of tabs) {
+        if (t.id && t.id !== tabId && t.url && DASHBOARDS.some((d) => t.url.startsWith(d))) {
+          chrome.tabs.sendMessage(t.id, { kind: "tkp-event", event }).catch(() => { });
+        }
+      }
+    }).catch(() => { });
+  } catch (_) { }
 }
 
 function waitForLoad(tabId, timeout = 45000) {
@@ -561,13 +572,12 @@ async function runAutopostLoop() {
 
     if (state.stopped) break;
 
-    // Perbarui status target di dashboard
-    const finalTarget = {
-      ...target,
-      status: postResult.status || "failed",
-      message: postResult.message || "",
-      at: Date.now(),
-    };
+    // Perbarui status target di memory dan dashboard
+    target.status = postResult.status || "failed";
+    target.message = postResult.message || "";
+    target.at = Date.now();
+    const finalTarget = { ...target };
+
     emit(state.dashTabId, {
       type: "FB_TARGET",
       runId: run.id,
@@ -618,10 +628,12 @@ async function runAutopostLoop() {
 
   if (!state.stopped) {
     state.active = false;
+    await sleep(400);
     emit(state.dashTabId, {
       type: "FB_STATUS",
       runId: run.id,
       state: "done",
+      targets: state.run.targets,
     });
     await setJob(null);
   }

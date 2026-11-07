@@ -177,8 +177,13 @@ export default function AutopostView({
         const cur = activeRunRef.current;
         if (!cur || cur.id !== e.runId) return;
 
-        const updatedTargets = cur.targets.map((t) => (t.id === e.target.id ? { ...t, ...e.target } : t));
+        const updatedTargets = cur.targets.map((t) =>
+          t.id === e.target.id || (t.groupId && e.target.groupId && t.groupId === e.target.groupId)
+            ? { ...t, ...e.target }
+            : t
+        );
         const updatedRun: PostRun = { ...cur, targets: updatedTargets };
+        activeRunRef.current = updatedRun;
         setActiveRun(updatedRun);
 
         // Update ke database di latar belakang
@@ -192,19 +197,25 @@ export default function AutopostView({
         }
 
         if (e.state === "done" || e.state === "stopped" || e.state === "error") {
+          const finalTargets = e.targets || cur.targets;
           const finalRun: PostRun = {
             ...cur,
+            targets: finalTargets,
             state: e.state,
             finishedAt: Date.now(),
           };
+          activeRunRef.current = null;
           setActiveRun(null);
           setActiveCountdown(null);
           setRuns((prev) => [finalRun, ...prev.filter((r) => r.id !== finalRun.id)]);
           updateRunState(cur.id, { state: e.state, finishedAt: Date.now() }).catch(() => { });
         } else if (e.state === "paused" || e.state === "running") {
-          const updatedRun: PostRun = { ...cur, state: e.state };
-          setActiveRun(updatedRun);
-          updateRunState(cur.id, { state: e.state }).catch(() => { });
+          if (cur.state !== e.state) {
+            const updatedRun: PostRun = { ...cur, state: e.state };
+            activeRunRef.current = updatedRun;
+            setActiveRun(updatedRun);
+            updateRunState(cur.id, { state: e.state }).catch(() => { });
+          }
         }
       }
     },
@@ -311,6 +322,7 @@ export default function AutopostView({
     };
 
     setActiveRun(newRun);
+    activeRunRef.current = newRun;
     setActiveCountdown(null);
 
     try {

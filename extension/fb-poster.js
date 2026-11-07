@@ -91,11 +91,11 @@
 
     try {
       targetBtn.scrollIntoView({ behavior: "instant", block: "center" });
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       if (typeof targetBtn.focus === "function") targetBtn.focus();
-    } catch (_) {}
+    } catch (_) { }
 
     const rect = targetBtn.getBoundingClientRect();
     const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
@@ -111,16 +111,16 @@
       buttons: 1,
     };
 
-    try { targetBtn.dispatchEvent(new PointerEvent("pointerdown", eventOpts)); } catch (_) {}
-    try { targetBtn.dispatchEvent(new MouseEvent("mousedown", eventOpts)); } catch (_) {}
-    try { targetBtn.dispatchEvent(new PointerEvent("pointerup", eventOpts)); } catch (_) {}
-    try { targetBtn.dispatchEvent(new MouseEvent("mouseup", eventOpts)); } catch (_) {}
+    try { targetBtn.dispatchEvent(new PointerEvent("pointerdown", eventOpts)); } catch (_) { }
+    try { targetBtn.dispatchEvent(new MouseEvent("mousedown", eventOpts)); } catch (_) { }
+    try { targetBtn.dispatchEvent(new PointerEvent("pointerup", eventOpts)); } catch (_) { }
+    try { targetBtn.dispatchEvent(new MouseEvent("mouseup", eventOpts)); } catch (_) { }
 
     // PENTING: Hanya kirim SATU event click agar modal tidak terbuka ganda (dobel klik)
     if (typeof targetBtn.click === "function") {
-      try { targetBtn.click(); } catch (_) {}
+      try { targetBtn.click(); } catch (_) { }
     } else {
-      try { targetBtn.dispatchEvent(new MouseEvent("click", eventOpts)); } catch (_) {}
+      try { targetBtn.dispatchEvent(new MouseEvent("click", eventOpts)); } catch (_) { }
     }
   }
 
@@ -464,7 +464,7 @@
     // 5. Masukkan teks postingan ke dalam editor komposer grup
     try {
       editor.focus();
-    } catch (_) {}
+    } catch (_) { }
     await sleep(400);
 
     let postContent = template.renderedText || template.body || "";
@@ -487,14 +487,14 @@
           const sel = window.getSelection();
           sel.removeAllRanges();
           sel.addRange(range);
-        } catch (_) {}
+        } catch (_) { }
       };
 
       // Kosongkan editor lalu tunggu Lexical selesai memperbarui DOM
       const clearEditor = async () => {
         if (!readEditor()) return;
         selectAllInEditor();
-        try { document.execCommand("delete", false, null); } catch (_) {}
+        try { document.execCommand("delete", false, null); } catch (_) { }
         await sleep(500);
       };
 
@@ -520,12 +520,12 @@
             cancelable: true,
           });
           editor.dispatchEvent(evt);
-        } catch (_) {}
+        } catch (_) { }
       };
 
       // Metode 2: execCommand insertText
       const insertByExec = () => {
-        try { document.execCommand("insertText", false, postContent); } catch (_) {}
+        try { document.execCommand("insertText", false, postContent); } catch (_) { }
       };
 
       await clearEditor();
@@ -743,8 +743,8 @@
         break;
       }
 
-      // 2) Request posting sedang berjalan → JANGAN selesai dulu, tunggu terus
-      if (netStarted) {
+      // 2) Request posting sedang berjalan di jaringan → tunggu sampai selesai (maksimal 45 detik)
+      if (netStarted && !netDone && Date.now() - postStart < 45000) {
         stableCount = 0;
         continue;
       }
@@ -755,10 +755,10 @@
         return { type: "fb-target-done", status: "failed", message: "Facebook menolak postingan: " + alertText };
       }
 
-      // 3) Cadangan bila request jaringan tidak terdeteksi: modal harus hilang stabil 8 detik
+      // 3) Cadangan bila request jaringan tidak terdeteksi: modal harus hilang stabil 4 detik
       if (!isComposerStillBusy()) {
         stableCount++;
-        if (stableCount >= 8 && Date.now() - postStart >= 10000) {
+        if (stableCount >= 4 && Date.now() - postStart >= 5000) {
           confirmed = true;
           break;
         }
@@ -782,16 +782,16 @@
       };
     }
 
-    // Setelah request selesai, tunggu modal komposer benar-benar tertutup (maks 20 detik)
+    // Setelah request selesai, tunggu modal komposer benar-benar tertutup (maks 15 detik)
     if (confirmedByNetwork) {
       const closeStart = Date.now();
-      while (Date.now() - closeStart < 20000 && isComposerStillBusy()) {
+      while (Date.now() - closeStart < 15000 && isComposerStillBusy()) {
         await sleep(1000);
       }
     }
 
-    // Jeda tambahan agar semua request lanjutan Facebook tuntas sebelum tab ditutup
-    await sleep(4000);
+    // Jeda singkat agar request status di Facebook tuntas sebelum tab ditutup
+    await sleep(1500);
 
     const pageText = (document.body.innerText || "").toLowerCase();
     const pending =
@@ -824,8 +824,8 @@
       // Detak jantung agar service worker extension tetap hidup selama proses posting yang lama
       const heartbeat = setInterval(() => {
         try {
-          chrome.runtime.sendMessage({ kind: "fb-heartbeat" }).catch(() => {});
-        } catch (_) {}
+          chrome.runtime.sendMessage({ kind: "fb-heartbeat" }).catch(() => { });
+        } catch (_) { }
       }, 10000);
 
       executePost(msg.target, msg.template, !!msg.dry)
@@ -834,7 +834,7 @@
             kind: "tkp-scrape",
             ...res,
             targetId: msg.target && msg.target.id,
-          }).catch(() => {});
+          }).catch(() => { });
         })
         .catch((err) => {
           chrome.runtime.sendMessage({
@@ -843,7 +843,7 @@
             status: "failed",
             message: err.message || "Terjadi kesalahan saat memproses grup",
             targetId: msg.target && msg.target.id,
-          }).catch(() => {});
+          }).catch(() => { });
         })
         .finally(() => {
           clearInterval(heartbeat);

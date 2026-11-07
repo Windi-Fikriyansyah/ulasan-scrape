@@ -77,7 +77,7 @@ export type ExtEvent =
   | { type: "FB_GROUPS_DONE"; stopped: boolean; total: number; diag?: FbGroupsDiag }
   | { type: "FB_TARGET"; runId: string; target: PostTarget }
   | { type: "FB_RUN"; run: PostRun }
-  | { type: "FB_STATUS"; runId: string; state: PostRunStatus; nextInSec?: number; currentTargetId?: string };
+  | { type: "FB_STATUS"; runId: string; state: PostRunStatus; nextInSec?: number; currentTargetId?: string; targets?: PostTarget[] };
 
 export type FbGroup = {
   id: string;

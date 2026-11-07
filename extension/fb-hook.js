@@ -10,13 +10,13 @@
   try {
     realHiddenGetter = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get;
     realVisibilityGetter = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get;
-  } catch (_) { }
+  } catch (_) {}
 
   const isReallyHidden = () => {
     try {
       if (realHiddenGetter) return realHiddenGetter.call(document);
       if (realVisibilityGetter) return realVisibilityGetter.call(document) === "hidden";
-    } catch (_) { }
+    } catch (_) {}
     return false;
   };
 
@@ -31,7 +31,7 @@
       configurable: true,
     });
     document.hasFocus = () => true;
-  } catch (_) { }
+  } catch (_) {}
 
   // 2. Shim requestAnimationFrame agar tidak dibekukan Chrome di tab latar belakang
   try {
@@ -41,7 +41,7 @@
         return setTimeout(() => {
           try {
             cb(performance.now());
-          } catch (_) { }
+          } catch (_) {}
         }, 16);
       }
       let called = false;
@@ -51,13 +51,13 @@
         clearTimeout(timer);
         try {
           cb(time);
-        } catch (_) { }
+        } catch (_) {}
       };
       // Timer pengaman 80ms bila browser mendadak menahan rAF di tab latar belakang
       const timer = setTimeout(() => safeCb(performance.now()), 80);
       return origRAF ? origRAF(safeCb) : timer;
     };
-  } catch (_) { }
+  } catch (_) {}
 
   // 3. Shim requestIdleCallback agar Facebook tidak menunda fetch query halaman berikutnya di tab latar belakang
   try {
@@ -70,7 +70,7 @@
               didTimeout: true,
               timeRemaining: () => 50,
             });
-          } catch (_) { }
+          } catch (_) {}
         }, 50);
       }
       let called = false;
@@ -80,7 +80,7 @@
         clearTimeout(timer);
         try {
           cb(deadline);
-        } catch (_) { }
+        } catch (_) {}
       };
       const timeoutVal = (options && options.timeout) || 150;
       const timer = setTimeout(
@@ -89,7 +89,7 @@
       );
       return origRIC ? origRIC(safeCb, options) : timer;
     };
-  } catch (_) { }
+  } catch (_) {}
 
   // 4. Proxy IntersectionObserver agar pagination / sentinel Facebook terpanggil aktif di tab latar belakang
   try {
@@ -185,13 +185,13 @@
               };
               try {
                 obs._callback([entry], obs._instance);
-              } catch (_) { }
+              } catch (_) {}
             }
           }
         }
       }, 800);
     }
-  } catch (_) { }
+  } catch (_) {}
 
   // 5. Pantau request GraphQL "buat postingan" agar autopost tahu kapan posting BENAR-BENAR selesai
   try {
@@ -206,14 +206,14 @@
         }
         if (body instanceof URLSearchParams) return body.get("fb_api_req_friendly_name") || "";
         if (body instanceof FormData) return String(body.get("fb_api_req_friendly_name") || "");
-      } catch (_) { }
+      } catch (_) {}
       return "";
     };
 
     const notify = (type, extra) => {
       try {
         window.postMessage(Object.assign({ __fbAutopostNet: true, type }, extra || {}), "*");
-      } catch (_) { }
+      } catch (_) {}
     };
 
     const evaluate = (status, text) => {
@@ -245,12 +245,12 @@
             notify("start", { name });
             this.addEventListener("loadend", () => {
               let text = "";
-              try { text = typeof this.responseText === "string" ? this.responseText : ""; } catch (_) { }
+              try { text = typeof this.responseText === "string" ? this.responseText : ""; } catch (_) {}
               notify("done", Object.assign({ name }, evaluate(this.status, text)));
             });
           }
         }
-      } catch (_) { }
+      } catch (_) {}
       return origSend.apply(this, arguments);
     };
 
@@ -262,7 +262,7 @@
         try {
           const url = typeof input === "string" ? input : (input && input.url) || "";
           if (url.includes("/api/graphql")) name = getFriendlyName(init && init.body);
-        } catch (_) { }
+        } catch (_) {}
         const p = origFetch.apply(this, arguments);
         if (name && POST_MUTATION_RE.test(name)) {
           notify("start", { name });
@@ -275,5 +275,5 @@
         return p;
       };
     }
-  } catch (_) { }
+  } catch (_) {}
 })();
