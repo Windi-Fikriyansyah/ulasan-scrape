@@ -46,7 +46,7 @@ function emit(tabId, event) {
         }
       }
     }).catch(() => { });
-  } catch (_) { }
+  } catch (_) {}
 }
 
 function waitForLoad(tabId, timeout = 45000) {
@@ -849,17 +849,17 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (fbFetchJob && (fbFetchJob.state === "berjalan" || fbFetchJob.state === "tertahan")) {
     if (tabId === fbFetchJob.tabId && changeInfo.status === "complete") {
-      if (!fbFetchJob.started && (fbFetchJob.reloadCount || 0) < 2) {
-        fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
-        await sleep(1000);
-        chrome.tabs.sendMessage(tabId, {
-          kind: "fb-groups-start",
-          runId: fbFetchJob.id,
-        }).catch(() => { });
+        if (!fbFetchJob.started && (fbFetchJob.reloadCount || 0) < 2) {
+          fbFetchJob.reloadCount = (fbFetchJob.reloadCount || 0) + 1;
+          await sleep(1000);
+          chrome.tabs.sendMessage(tabId, {
+            kind: "fb-groups-start",
+            runId: fbFetchJob.id,
+          }).catch(() => { });
+        }
       }
     }
-  }
-});
+  });
 
 try {
   chrome.alarms.create("fb-fetch-watchdog", { periodInMinutes: 1 });
