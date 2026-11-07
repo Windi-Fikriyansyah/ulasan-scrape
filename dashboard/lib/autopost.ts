@@ -33,13 +33,17 @@ export function normalizeGroupUrl(raw: string): { url: string; id: string } | nu
     // Contoh: /groups/123456789 atau /groups/komunitas-bisnis
     const groupIdx = segments.indexOf("groups");
     if (groupIdx !== -1 && segments.length > groupIdx + 1) {
-      const key = segments[groupIdx + 1];
+      let key = segments[groupIdx + 1];
+      try {
+        key = decodeURIComponent(key);
+      } catch (_) {}
+      const lowerKey = key.toLowerCase();
       // Abaikan rute non-grup facebook
       const ignored = ["joins", "feed", "discover", "create", "search", "notifications", "manage"];
-      if (ignored.includes(key.toLowerCase())) return null;
+      if (ignored.includes(lowerKey)) return null;
       return {
-        url: `https://www.facebook.com/groups/${key}/`,
-        id: key,
+        url: `https://www.facebook.com/groups/${lowerKey}/`,
+        id: lowerKey,
       };
     }
   } catch (_) {}

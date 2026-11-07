@@ -46,10 +46,10 @@
 
       // Format profile.php?id=123
       if (u.pathname.includes("profile.php") && u.searchParams.get("id")) {
-        const id = u.searchParams.get("id").trim();
+        const id = u.searchParams.get("id").trim().toLowerCase();
         return {
           ok: true,
-          id: id.toLowerCase(),
+          id,
           url: `https://www.facebook.com/groups/${id}/`,
         };
       }
@@ -66,14 +66,15 @@
           key = decodeURIComponent(key);
         } catch (_) { }
 
-        if (IGNORED_PATHS.has(key.toLowerCase())) {
+        const lowerKey = key.toLowerCase();
+        if (IGNORED_PATHS.has(lowerKey)) {
           return { ok: false, reason: "jalur_terlarang", href };
         }
 
         return {
           ok: true,
-          id: key.toLowerCase(),
-          url: `https://www.facebook.com/groups/${key}/`,
+          id: lowerKey,
+          url: `https://www.facebook.com/groups/${lowerKey}/`,
         };
       }
     } catch (_) { }
