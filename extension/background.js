@@ -838,6 +838,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       else if (cmd.type === "FB_RUN_PAUSE") await pauseAutopostRun();
       else if (cmd.type === "FB_RUN_RESUME") await resumeAutopostRun();
       else if (cmd.type === "FB_RUN_STOP") await stopAutopostRun();
+      else if (cmd.type === "FB_RUN_STATUS") {
+        if (autopostState && autopostState.active && autopostState.run) {
+          if (!cmd.userId || !autopostState.userId || cmd.userId === autopostState.userId) {
+            autopostState.dashTabId = dashTabId;
+            emit(dashTabId, {
+              type: "FB_RUN_SYNC",
+              run: autopostState.run,
+              state: autopostState.paused ? "paused" : "running",
+              targetIndex: autopostState.targetIndex,
+            });
+          }
+        }
+      }
     } else if (msg.kind === "tkp-scrape") {
       await handleScrape(msg, sender.tab && sender.tab.id);
     }

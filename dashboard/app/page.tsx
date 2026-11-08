@@ -224,6 +224,7 @@ export default function Home() {
       case "FB_GROUPS_DONE":
       case "FB_TARGET":
       case "FB_RUN":
+      case "FB_RUN_SYNC":
       case "FB_STATUS": {
         for (const listener of autopostListenersRef.current) {
           listener(e);
@@ -627,13 +628,13 @@ export default function Home() {
           </div>
         )}
 
-        {menu === "autopost" && (
+        <div style={{ display: menu === "autopost" ? "block" : "none" }}>
           <AutopostView
             isExtensionConnected={ext.status === "connected"}
             sendToExtension={ext.send}
             registerEventHandler={registerAutopostListener}
           />
-        )}
+        </div>
 
         {menu === "akun" && (
           <AccountView user={user} superuserWarning={superuserWarning} />

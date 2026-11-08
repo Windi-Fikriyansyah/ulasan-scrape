@@ -61,6 +61,9 @@ export default function AutopostView({
   const activeRunRef = useRef<PostRun | null>(null);
   activeRunRef.current = activeRun;
 
+  const runsRef = useRef<PostRun[]>([]);
+  runsRef.current = runs;
+
   // Muat data awal dari PostgreSQL
   useEffect(() => {
     let unmounted = false;
@@ -70,7 +73,16 @@ export default function AutopostView({
           setGroups(g);
           setTemplates(t);
           setRuns(r);
+          runsRef.current = r;
           setLoaded(true);
+
+          // Pulihkan pekerjaan pengiriman aktif dari PostgreSQL bila sedang berjalan atau dijeda
+          const inProgress = r.find((run) => run.state === "running" || run.state === "paused");
+          if (inProgress && !activeRunRef.current) {
+            setActiveRun(inProgress);
+            activeRunRef.current = inProgress;
+            setActiveTab("kirim");
+          }
         }
       })
       .catch((err) => {
@@ -87,6 +99,7 @@ export default function AutopostView({
   useEffect(() => {
     if (isExtensionConnected) {
       sendToExtension({ type: "FB_FETCH_STATUS" });
+      sendToExtension({ type: "FB_RUN_STATUS" });
     }
   }, [isExtensionConnected, sendToExtension]);
 
@@ -173,8 +186,31 @@ export default function AutopostView({
           diag: e.diag,
           reason: e.diag?.stopReason,
         });
+      } else if (e.type === "FB_RUN_SYNC") {
+        if (e.run) {
+          const syncedRun: PostRun = {
+            ...e.run,
+            state: e.state || e.run.state || "running",
+          };
+          activeRunRef.current = syncedRun;
+          setActiveRun(syncedRun);
+          setRuns((prev) => {
+            const exists = prev.some((r) => r.id === syncedRun.id);
+            return exists ? prev.map((r) => (r.id === syncedRun.id ? syncedRun : r)) : [syncedRun, ...prev];
+          });
+          setActiveTab("kirim");
+        }
       } else if (e.type === "FB_TARGET") {
-        const cur = activeRunRef.current;
+        let cur = activeRunRef.current;
+        if (!cur || cur.id !== e.runId) {
+          const found = runsRef.current.find((r) => r.id === e.runId);
+          if (found && (found.state === "running" || found.state === "paused")) {
+            cur = found;
+            activeRunRef.current = found;
+            setActiveRun(found);
+            setActiveTab("kirim");
+          }
+        }
         if (!cur || cur.id !== e.runId) return;
 
         const updatedTargets = cur.targets.map((t) =>
@@ -185,11 +221,21 @@ export default function AutopostView({
         const updatedRun: PostRun = { ...cur, targets: updatedTargets };
         activeRunRef.current = updatedRun;
         setActiveRun(updatedRun);
+        setRuns((prev) => prev.map((r) => (r.id === cur!.id ? updatedRun : r)));
 
         // Update ke database di latar belakang
         updateTargetRemote(cur.id, e.target).catch(() => { });
       } else if (e.type === "FB_STATUS") {
-        const cur = activeRunRef.current;
+        let cur = activeRunRef.current;
+        if (!cur || cur.id !== e.runId) {
+          const found = runsRef.current.find((r) => r.id === e.runId);
+          if (found && (found.state === "running" || found.state === "paused")) {
+            cur = found;
+            activeRunRef.current = found;
+            setActiveRun(found);
+            setActiveTab("kirim");
+          }
+        }
         if (!cur || cur.id !== e.runId) return;
 
         if (e.nextInSec !== undefined) {
@@ -214,6 +260,7 @@ export default function AutopostView({
             const updatedRun: PostRun = { ...cur, state: e.state };
             activeRunRef.current = updatedRun;
             setActiveRun(updatedRun);
+            setRuns((prev) => prev.map((r) => (r.id === cur!.id ? updatedRun : r)));
             updateRunState(cur.id, { state: e.state }).catch(() => { });
           }
         }
@@ -324,6 +371,7 @@ export default function AutopostView({
     setActiveRun(newRun);
     activeRunRef.current = newRun;
     setActiveCountdown(null);
+    setRuns((prev) => [newRun, ...prev.filter((r) => r.id !== newRun.id)]);
 
     try {
       await saveRun(newRun);

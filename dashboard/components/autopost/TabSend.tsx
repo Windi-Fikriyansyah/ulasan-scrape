@@ -141,10 +141,14 @@ export default function TabSend({
   };
 
   // Run yang sedang ditampilkan di tampilan riwayat
+  const historyRuns = useMemo(() => {
+    return runs.filter((r) => !activeRun || r.id !== activeRun.id);
+  }, [runs, activeRun]);
+
   const displayedHistoryRun = useMemo(() => {
-    if (!selectedHistoryId) return runs[0] || null;
-    return runs.find((r) => r.id === selectedHistoryId) || runs[0] || null;
-  }, [runs, selectedHistoryId]);
+    if (!selectedHistoryId) return historyRuns[0] || null;
+    return historyRuns.find((r) => r.id === selectedHistoryId) || historyRuns[0] || null;
+  }, [historyRuns, selectedHistoryId]);
 
   return (
     <div className="fb-send-layout">
@@ -478,16 +482,16 @@ export default function TabSend({
       {/* RIWAYAT PENGIRIMAN (ARCHIVE) */}
       <section className="sheet" style={{ marginTop: "24px" }}>
         <h3 className="mark" style={{ fontSize: "18px", marginBottom: "12px" }}>
-          Riwayat Pengiriman ({runs.length})
+          Riwayat Pengiriman ({historyRuns.length})
         </h3>
 
-        {runs.length === 0 ? (
+        {historyRuns.length === 0 ? (
           <p className="small muted">Belum ada riwayat pengiriman.</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", gap: "20px" }}>
             {/* Kolom kiri: List run */}
             <ul className="archive" style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: "400px", overflowY: "auto" }}>
-              {runs.map((r) => {
+              {historyRuns.map((r) => {
                 const isSelected = displayedHistoryRun?.id === r.id;
                 const successCount = (r.targets || []).filter((t) => t.status === "success").length;
                 const total = r.total || r.targets?.length || 0;
