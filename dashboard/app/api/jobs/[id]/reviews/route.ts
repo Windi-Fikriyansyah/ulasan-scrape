@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { checkGuard, dedupeKeyReview } from "@/lib/server/guard";
-import { getPool } from "@/lib/server/pg";
+import { withAuth, dedupeKeyReview } from "@/lib/server/guard";
+import { withUser } from "@/lib/server/pg";
 import type { Review } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -8,16 +8,19 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, { params }: Context) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    const { id: jobId } = await params;
+    if (!jobId) {
+      return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
+    }
 
-  const { id: jobId } = await params;
-  if (!jobId) {
-    return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
-  }
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (_) {
+      return NextResponse.json({ ok: false, error: "Body JSON tidak valid." }, { status: 400 });
+    }
 
-  try {
-    const body = await req.json();
     const reviews: Review[] = body.reviews;
     const page: number | undefined = body.page;
 
@@ -31,11 +34,15 @@ export async function POST(req: NextRequest, { params }: Context) {
       );
     }
 
-    const pool = getPool();
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
+    const success = await withUser(user.id, async (client) => {
+      // Pastikan job ada dan milik user ini
+      const jobCheck = await client.query(
+        "SELECT id FROM review_jobs WHERE id = $1 AND user_id = $2",
+        [jobId, user.id]
+      );
+      if (jobCheck.rows.length === 0) {
+        return false;
+      }
 
       if (reviews.length > 0) {
         const rows: any[] = [];
@@ -50,43 +57,55 @@ export async function POST(req: NextRequest, { params }: Context) {
           const dateText = String(r.date || "").slice(0, 100);
           const variant = String(r.variant || "").slice(0, 300);
           const reviewText = String(r.review || "").slice(0, 20000);
-          const imagesJson = JSON.stringify(Array.isArray(r.images) ? r.images.map((s) => String(s).slice(0, 2000)) : []);
+          const imagesJson = JSON.stringify(
+            Array.isArray(r.images) ? r.images.map((s) => String(s).slice(0, 2000)) : []
+          );
           const sellerReply = String(r.seller_reply || "").slice(0, 10000);
 
           valuePlaceholders.push(
-            `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
+            `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
           );
-          rows.push(jobId, dedupeKey, name, avatar, rating, dateText, variant, reviewText, imagesJson, sellerReply);
+          rows.push(
+            user.id,
+            jobId,
+            dedupeKey,
+            name,
+            avatar,
+            rating,
+            dateText,
+            variant,
+            reviewText,
+            imagesJson,
+            sellerReply
+          );
         }
 
         const sql = `
           INSERT INTO reviews (
-            job_id, dedupe_key, name, avatar, rating, date_text, variant, review, images, seller_reply
+            user_id, job_id, dedupe_key, name, avatar, rating, date_text, variant, review, images, seller_reply
           )
           VALUES ${valuePlaceholders.join(", ")}
-          ON CONFLICT (job_id, dedupe_key) DO NOTHING;
+          ON CONFLICT (user_id, job_id, dedupe_key) DO NOTHING;
         `;
 
         await client.query(sql, rows);
       }
 
       if (typeof page === "number" && Number.isFinite(page)) {
-        await client.query("UPDATE review_jobs SET page = $1 WHERE id = $2", [Math.max(0, page), jobId]);
+        await client.query("UPDATE review_jobs SET page = $1 WHERE id = $2 AND user_id = $3", [
+          Math.max(0, page),
+          jobId,
+          user.id,
+        ]);
       }
 
-      await client.query("COMMIT");
-      return NextResponse.json({ ok: true, count: reviews.length });
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal menyimpan batch ulasan: ${err.message}` },
-      { status: 500 }
-    );
-  }
-}
+      return true;
+    });
 
+    if (!success) {
+      return NextResponse.json({ ok: false, error: "Pekerjaan ulasan tidak ditemukan." }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, count: reviews.length });
+  });
+}

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { checkGuard, dedupeKeyLead } from "@/lib/server/guard";
-import { getPool } from "@/lib/server/pg";
+import { withAuth, dedupeKeyLead } from "@/lib/server/guard";
+import { withUser } from "@/lib/server/pg";
 import type { Lead } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -8,16 +8,19 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, { params }: Context) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    const { id: jobId } = await params;
+    if (!jobId) {
+      return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
+    }
 
-  const { id: jobId } = await params;
-  if (!jobId) {
-    return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
-  }
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (_) {
+      return NextResponse.json({ ok: false, error: "Body JSON tidak valid." }, { status: 400 });
+    }
 
-  try {
-    const body = await req.json();
     const leads: Lead[] = body.leads;
     const found: number | undefined = body.found;
 
@@ -31,11 +34,15 @@ export async function POST(req: NextRequest, { params }: Context) {
       );
     }
 
-    const pool = getPool();
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
+    const success = await withUser(user.id, async (client) => {
+      // Pastikan job ada dan milik user ini
+      const jobCheck = await client.query("SELECT id FROM lead_jobs WHERE id = $1 AND user_id = $2", [
+        jobId,
+        user.id,
+      ]);
+      if (jobCheck.rows.length === 0) {
+        return false;
+      }
 
       if (leads.length > 0) {
         const rows: any[] = [];
@@ -49,8 +56,14 @@ export async function POST(req: NextRequest, { params }: Context) {
           const address = l.address ? String(l.address).slice(0, 1000) : null;
           const phone = l.phone ? String(l.phone).slice(0, 100) : null;
           const website = l.website ? String(l.website).slice(0, 2000) : null;
-          const rating = typeof l.rating === "number" && Number.isFinite(l.rating) ? Math.max(0, Math.min(5, l.rating)) : null;
-          const reviewsCount = typeof l.reviews === "number" && Number.isFinite(l.reviews) ? Math.max(0, Math.round(l.reviews)) : null;
+          const rating =
+            typeof l.rating === "number" && Number.isFinite(l.rating)
+              ? Math.max(0, Math.min(5, l.rating))
+              : null;
+          const reviewsCount =
+            typeof l.reviews === "number" && Number.isFinite(l.reviews)
+              ? Math.max(0, Math.round(l.reviews))
+              : null;
           const hours = l.hours ? String(l.hours).slice(0, 2000) : null;
           const lat = typeof l.lat === "number" && Number.isFinite(l.lat) ? l.lat : null;
           const lng = typeof l.lng === "number" && Number.isFinite(l.lng) ? l.lng : null;
@@ -58,39 +71,53 @@ export async function POST(req: NextRequest, { params }: Context) {
           const status = l.status ? String(l.status).slice(0, 200) : null;
 
           valuePlaceholders.push(
-            `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
+            `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
           );
-          rows.push(jobId, dedupeKey, name, category, address, phone, website, rating, reviewsCount, hours, lat, lng, mapsUrl, status);
+          rows.push(
+            user.id,
+            jobId,
+            dedupeKey,
+            name,
+            category,
+            address,
+            phone,
+            website,
+            rating,
+            reviewsCount,
+            hours,
+            lat,
+            lng,
+            mapsUrl,
+            status
+          );
         }
 
         const sql = `
           INSERT INTO leads (
-            job_id, dedupe_key, name, category, address, phone, website, rating, reviews_count, hours, lat, lng, maps_url, status
+            user_id, job_id, dedupe_key, name, category, address, phone, website, rating, reviews_count, hours, lat, lng, maps_url, status
           )
           VALUES ${valuePlaceholders.join(", ")}
-          ON CONFLICT (job_id, dedupe_key) DO NOTHING;
+          ON CONFLICT (user_id, job_id, dedupe_key) DO NOTHING;
         `;
 
         await client.query(sql, rows);
       }
 
       if (typeof found === "number" && Number.isFinite(found)) {
-        await client.query("UPDATE lead_jobs SET found = $1 WHERE id = $2", [Math.max(0, found), jobId]);
+        await client.query("UPDATE lead_jobs SET found = $1 WHERE id = $2 AND user_id = $3", [
+          Math.max(0, found),
+          jobId,
+          user.id,
+        ]);
       }
 
-      await client.query("COMMIT");
-      return NextResponse.json({ ok: true, count: leads.length });
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal menyimpan batch lead: ${err.message}` },
-      { status: 500 }
-    );
-  }
-}
+      return true;
+    });
 
+    if (!success) {
+      return NextResponse.json({ ok: false, error: "Pekerjaan lead maps tidak ditemukan." }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, count: leads.length });
+  });
+}

@@ -10,13 +10,13 @@
   try {
     realHiddenGetter = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get;
     realVisibilityGetter = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get;
-  } catch (_) {}
+  } catch (_) { }
 
   const isReallyHidden = () => {
     try {
       if (realHiddenGetter) return realHiddenGetter.call(document);
       if (realVisibilityGetter) return realVisibilityGetter.call(document) === "hidden";
-    } catch (_) {}
+    } catch (_) { }
     return false;
   };
 
@@ -30,66 +30,96 @@
       get: () => false,
       configurable: true,
     });
-    document.hasFocus = () => true;
-  } catch (_) {}
+    if (Document.prototype && Object.getOwnPropertyDescriptor(Document.prototype, "hasFocus")) {
+      Object.defineProperty(Document.prototype, "hasFocus", {
+        value: () => true,
+        configurable: true,
+        writable: true,
+      });
+    } else {
+      document.hasFocus = () => true;
+    }
+  } catch (_) { }
 
-  // 2. Shim requestAnimationFrame agar tidak dibekukan Chrome di tab latar belakang
+  // 2. Shim requestAnimationFrame & cancelAnimationFrame
   try {
     const origRAF = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
-    window.requestAnimationFrame = function (cb) {
-      if (isReallyHidden()) {
-        return setTimeout(() => {
-          try {
-            cb(performance.now());
-          } catch (_) {}
-        }, 16);
-      }
-      let called = false;
-      const safeCb = (time) => {
-        if (called) return;
-        called = true;
-        clearTimeout(timer);
-        try {
-          cb(time);
-        } catch (_) {}
-      };
-      // Timer pengaman 80ms bila browser mendadak menahan rAF di tab latar belakang
-      const timer = setTimeout(() => safeCb(performance.now()), 80);
-      return origRAF ? origRAF(safeCb) : timer;
-    };
-  } catch (_) {}
+    const origCancelRAF = window.cancelAnimationFrame ? window.cancelAnimationFrame.bind(window) : null;
+    let nextFakeId = 1000000;
+    const fakeTimers = new Map();
 
-  // 3. Shim requestIdleCallback agar Facebook tidak menunda fetch query halaman berikutnya di tab latar belakang
+    if (origRAF) {
+      window.requestAnimationFrame = function (cb) {
+        if (typeof cb !== "function") return origRAF ? origRAF(cb) : 0;
+        if (isReallyHidden()) {
+          const fakeId = ++nextFakeId;
+          const tid = setTimeout(() => {
+            fakeTimers.delete(fakeId);
+            try {
+              cb(performance.now());
+            } catch (_) {}
+          }, 16);
+          fakeTimers.set(fakeId, tid);
+          return fakeId;
+        }
+        return origRAF(cb);
+      };
+
+      if (origCancelRAF) {
+        window.cancelAnimationFrame = function (id) {
+          if (fakeTimers.has(id)) {
+            const tid = fakeTimers.get(id);
+            fakeTimers.delete(id);
+            clearTimeout(tid);
+          } else {
+            origCancelRAF(id);
+          }
+        };
+      }
+    }
+  } catch (_) { }
+
+  // 3. Shim requestIdleCallback & cancelIdleCallback
   try {
     const origRIC = window.requestIdleCallback ? window.requestIdleCallback.bind(window) : null;
-    window.requestIdleCallback = function (cb, options) {
-      if (isReallyHidden()) {
-        return setTimeout(() => {
-          try {
-            cb({
-              didTimeout: true,
-              timeRemaining: () => 50,
-            });
-          } catch (_) {}
-        }, 50);
-      }
-      let called = false;
-      const safeCb = (deadline) => {
-        if (called) return;
-        called = true;
-        clearTimeout(timer);
-        try {
-          cb(deadline);
-        } catch (_) {}
+    const origCancelRIC = window.cancelIdleCallback ? window.cancelIdleCallback.bind(window) : null;
+    let nextFakeRicId = 2000000;
+    const fakeRicTimers = new Map();
+
+    if (origRIC) {
+      window.requestIdleCallback = function (cb, options) {
+        if (typeof cb !== "function") return origRIC ? origRIC(cb, options) : 0;
+        if (isReallyHidden()) {
+          const fakeId = ++nextFakeRicId;
+          const timeoutVal = (options && options.timeout) || 50;
+          const tid = setTimeout(() => {
+            fakeRicTimers.delete(fakeId);
+            try {
+              cb({
+                didTimeout: true,
+                timeRemaining: () => 50,
+              });
+            } catch (_) {}
+          }, Math.min(timeoutVal, 50));
+          fakeRicTimers.set(fakeId, tid);
+          return fakeId;
+        }
+        return origRIC(cb, options);
       };
-      const timeoutVal = (options && options.timeout) || 150;
-      const timer = setTimeout(
-        () => safeCb({ didTimeout: true, timeRemaining: () => 50 }),
-        timeoutVal
-      );
-      return origRIC ? origRIC(safeCb, options) : timer;
-    };
-  } catch (_) {}
+
+      if (origCancelRIC) {
+        window.cancelIdleCallback = function (id) {
+          if (fakeRicTimers.has(id)) {
+            const tid = fakeRicTimers.get(id);
+            fakeRicTimers.delete(id);
+            clearTimeout(tid);
+          } else {
+            origCancelRIC(id);
+          }
+        };
+      }
+    }
+  } catch (_) { }
 
   // 4. Proxy IntersectionObserver agar pagination / sentinel Facebook terpanggil aktif di tab latar belakang
   try {
@@ -101,7 +131,11 @@
         constructor(callback, options) {
           const targets = new Set();
           const instance = new OriginalIO((entries, obs) => {
-            callback(entries, obs);
+            if (typeof callback === "function") {
+              try {
+                callback(entries, this);
+              } catch (_) {}
+            }
           }, options);
 
           this._instance = instance;
@@ -115,23 +149,33 @@
         observe(el) {
           if (el && el.nodeType === 1) {
             this._targets.add(el);
-            this._instance.observe(el);
+            try {
+              this._instance.observe(el);
+            } catch (_) {}
           }
         }
 
         unobserve(el) {
           this._targets.delete(el);
-          this._instance.unobserve(el);
+          try {
+            this._instance.unobserve(el);
+          } catch (_) {}
         }
 
         disconnect() {
           this._targets.clear();
-          this._instance.disconnect();
+          try {
+            this._instance.disconnect();
+          } catch (_) {}
           activeObservers.delete(this);
         }
 
         takeRecords() {
-          return this._instance.takeRecords();
+          try {
+            return this._instance.takeRecords();
+          } catch (_) {
+            return [];
+          }
         }
 
         get root() {
@@ -184,14 +228,16 @@
                 },
               };
               try {
-                obs._callback([entry], obs._instance);
-              } catch (_) {}
+                if (typeof obs._callback === "function") {
+                  obs._callback([entry], obs);
+                }
+              } catch (_) { }
             }
           }
         }
       }, 800);
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // 5. Pantau request GraphQL "buat postingan" agar autopost tahu kapan posting BENAR-BENAR selesai
   try {
@@ -206,14 +252,14 @@
         }
         if (body instanceof URLSearchParams) return body.get("fb_api_req_friendly_name") || "";
         if (body instanceof FormData) return String(body.get("fb_api_req_friendly_name") || "");
-      } catch (_) {}
+      } catch (_) { }
       return "";
     };
 
     const notify = (type, extra) => {
       try {
         window.postMessage(Object.assign({ __fbAutopostNet: true, type }, extra || {}), "*");
-      } catch (_) {}
+      } catch (_) { }
     };
 
     const evaluate = (status, text) => {
@@ -245,12 +291,12 @@
             notify("start", { name });
             this.addEventListener("loadend", () => {
               let text = "";
-              try { text = typeof this.responseText === "string" ? this.responseText : ""; } catch (_) {}
+              try { text = typeof this.responseText === "string" ? this.responseText : ""; } catch (_) { }
               notify("done", Object.assign({ name }, evaluate(this.status, text)));
             });
           }
         }
-      } catch (_) {}
+      } catch (_) { }
       return origSend.apply(this, arguments);
     };
 
@@ -261,19 +307,23 @@
         let name = "";
         try {
           const url = typeof input === "string" ? input : (input && input.url) || "";
-          if (url.includes("/api/graphql")) name = getFriendlyName(init && init.body);
-        } catch (_) {}
+          if (typeof url === "string" && url.includes("/api/graphql")) name = getFriendlyName(init && init.body);
+        } catch (_) { }
         const p = origFetch.apply(this, arguments);
         if (name && POST_MUTATION_RE.test(name)) {
           notify("start", { name });
           p.then((res) => {
-            res.clone().text()
-              .then((text) => notify("done", Object.assign({ name }, evaluate(res.status, text))))
-              .catch(() => notify("done", { name, ok: res.ok, error: res.ok ? "" : "HTTP " + res.status }));
+            try {
+              res.clone().text()
+                .then((text) => notify("done", Object.assign({ name }, evaluate(res.status, text))))
+                .catch(() => notify("done", { name, ok: res.ok, error: res.ok ? "" : "HTTP " + res.status }));
+            } catch (_) {
+              notify("done", { name, ok: res.ok, error: res.ok ? "" : "HTTP " + res.status });
+            }
           }).catch((err) => notify("done", { name, ok: false, error: String(err && err.message || err) }));
         }
         return p;
       };
     }
-  } catch (_) {}
+  } catch (_) { }
 })();

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { checkGuard } from "@/lib/server/guard";
-import { query } from "@/lib/server/pg";
+import { withAuth } from "@/lib/server/guard";
+import { withUser } from "@/lib/server/pg";
 import type { LeadJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -8,116 +8,119 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, { params }: Context) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
+    }
 
-  const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
-  }
+    const job = await withUser(user.id, async (client) => {
+      const res = await client.query(
+        `
+        SELECT 
+          lj.id,
+          lj.keyword,
+          lj.location,
+          lj.url,
+          lj.fields,
+          lj.max_results AS "maxResults",
+          lj.status,
+          lj.error,
+          lj.found,
+          lj.sample,
+          extract(epoch from lj.started_at) * 1000 AS "startedAt",
+          extract(epoch from lj.finished_at) * 1000 AS "finishedAt",
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'name', l.name,
+                  'category', l.category,
+                  'address', l.address,
+                  'phone', l.phone,
+                  'website', l.website,
+                  'rating', l.rating,
+                  'reviews', l.reviews_count,
+                  'hours', l.hours,
+                  'lat', l.lat,
+                  'lng', l.lng,
+                  'mapsUrl', l.maps_url,
+                  'status', l.status
+                ) ORDER BY l.id ASC
+              )
+              FROM leads l
+              WHERE l.job_id = lj.id AND l.user_id = lj.user_id
+            ),
+            '[]'::json
+          ) AS leads
+        FROM lead_jobs lj
+        WHERE lj.id = $1 AND lj.user_id = $2;
+      `,
+        [id, user.id]
+      );
 
-  try {
-    const res = await query(
-      `
-      SELECT 
-        lj.id,
-        lj.keyword,
-        lj.location,
-        lj.url,
-        lj.fields,
-        lj.max_results AS "maxResults",
-        lj.status,
-        lj.error,
-        lj.found,
-        lj.sample,
-        extract(epoch from lj.started_at) * 1000 AS "startedAt",
-        extract(epoch from lj.finished_at) * 1000 AS "finishedAt",
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'name', l.name,
-              'category', l.category,
-              'address', l.address,
-              'phone', l.phone,
-              'website', l.website,
-              'rating', l.rating,
-              'reviews', l.reviews_count,
-              'hours', l.hours,
-              'lat', l.lat,
-              'lng', l.lng,
-              'mapsUrl', l.maps_url,
-              'status', l.status
-            ) ORDER BY l.id ASC
-          ) FILTER (WHERE l.id IS NOT NULL),
-          '[]'::json
-        ) AS leads
-      FROM lead_jobs lj
-      LEFT JOIN leads l ON l.job_id = lj.id
-      WHERE lj.id = $1
-      GROUP BY lj.id;
-    `,
-      [id]
-    );
+      if (res.rows.length === 0) {
+        return null;
+      }
 
-    if (res.rows.length === 0) {
+      const row = res.rows[0];
+      return {
+        id: row.id,
+        keyword: row.keyword || "",
+        location: row.location || "",
+        url: row.url,
+        fields: Array.isArray(row.fields) ? row.fields : [],
+        maxResults: Number(row.maxResults) || 50,
+        status: row.status,
+        error: row.error || undefined,
+        found: Number(row.found) || 0,
+        sample: row.sample || undefined,
+        startedAt: Math.round(Number(row.startedAt)),
+        finishedAt: row.finishedAt ? Math.round(Number(row.finishedAt)) : undefined,
+        leads: Array.isArray(row.leads)
+          ? row.leads.map((l: any) => ({
+              ...l,
+              category: l.category || undefined,
+              address: l.address || undefined,
+              phone: l.phone || undefined,
+              website: l.website || undefined,
+              rating: typeof l.rating === "number" || typeof l.rating === "string" ? Number(l.rating) : undefined,
+              reviews: typeof l.reviews === "number" ? l.reviews : undefined,
+              hours: l.hours || undefined,
+              lat: typeof l.lat === "number" ? l.lat : undefined,
+              lng: typeof l.lng === "number" ? l.lng : undefined,
+              mapsUrl: l.mapsUrl || undefined,
+              status: l.status || undefined,
+            }))
+          : [],
+      } as LeadJob;
+    });
+
+    if (!job) {
       return NextResponse.json({ ok: false, error: "Pekerjaan lead maps tidak ditemukan." }, { status: 404 });
     }
 
-    const row = res.rows[0];
-    const job: LeadJob = {
-      id: row.id,
-      keyword: row.keyword || "",
-      location: row.location || "",
-      url: row.url,
-      fields: Array.isArray(row.fields) ? row.fields : [],
-      maxResults: Number(row.maxResults) || 50,
-      status: row.status,
-      error: row.error || undefined,
-      found: Number(row.found) || 0,
-      sample: row.sample || undefined,
-      startedAt: Math.round(Number(row.startedAt)),
-      finishedAt: row.finishedAt ? Math.round(Number(row.finishedAt)) : undefined,
-      leads: Array.isArray(row.leads)
-        ? row.leads.map((l: any) => ({
-            ...l,
-            category: l.category || undefined,
-            address: l.address || undefined,
-            phone: l.phone || undefined,
-            website: l.website || undefined,
-            rating: typeof l.rating === "number" || typeof l.rating === "string" ? Number(l.rating) : undefined,
-            reviews: typeof l.reviews === "number" ? l.reviews : undefined,
-            hours: l.hours || undefined,
-            lat: typeof l.lat === "number" ? l.lat : undefined,
-            lng: typeof l.lng === "number" ? l.lng : undefined,
-            mapsUrl: l.mapsUrl || undefined,
-            status: l.status || undefined,
-          }))
-        : [],
-    };
-
     return NextResponse.json({ ok: true, job });
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal membaca detail lead maps: ${err.message}` },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function PATCH(req: NextRequest, { params }: Context) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
+    }
 
-  const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
-  }
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (_) {
+      return NextResponse.json({ ok: false, error: "Body JSON tidak valid." }, { status: 400 });
+    }
 
-  try {
-    const body = await req.json();
     const updates: string[] = [];
-    const values: any[] = [id];
-    let idx = 2;
+    const values: any[] = [id, user.id];
+    let idx = 3;
 
     if (body.sample !== undefined) {
       updates.push(`sample = $${idx++}`);
@@ -142,36 +145,45 @@ export async function PATCH(req: NextRequest, { params }: Context) {
       values.push(body.finishedAt ? Number(body.finishedAt) : null);
     }
 
-    if (updates.length > 0) {
-      await query(`UPDATE lead_jobs SET ${updates.join(", ")} WHERE id = $1`, values);
+    const updated = await withUser(user.id, async (client) => {
+      if (updates.length > 0) {
+        const res = await client.query(
+          `UPDATE lead_jobs SET ${updates.join(", ")} WHERE id = $1 AND user_id = $2 RETURNING id`,
+          values
+        );
+        return res.rows.length > 0;
+      }
+      const check = await client.query("SELECT id FROM lead_jobs WHERE id = $1 AND user_id = $2", [id, user.id]);
+      return check.rows.length > 0;
+    });
+
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "Pekerjaan lead maps tidak ditemukan." }, { status: 404 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal memperbarui pekerjaan lead maps: ${err.message}` },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function DELETE(req: NextRequest, { params }: Context) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
+    }
 
-  const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "ID pekerjaan tidak valid." }, { status: 400 });
-  }
+    const deleted = await withUser(user.id, async (client) => {
+      const res = await client.query("DELETE FROM lead_jobs WHERE id = $1 AND user_id = $2 RETURNING id", [
+        id,
+        user.id,
+      ]);
+      return res.rows.length > 0;
+    });
 
-  try {
-    await query("DELETE FROM lead_jobs WHERE id = $1", [id]);
+    if (!deleted) {
+      return NextResponse.json({ ok: false, error: "Pekerjaan lead maps tidak ditemukan." }, { status: 404 });
+    }
+
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal menghapus pekerjaan lead maps: ${err.message}` },
-      { status: 500 }
-    );
-  }
+  });
 }
-

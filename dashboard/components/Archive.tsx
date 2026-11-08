@@ -1,3 +1,5 @@
+"use client";
+
 import type { Job } from "@/lib/types";
 import { dateTime, nf0 } from "@/lib/analysis";
 

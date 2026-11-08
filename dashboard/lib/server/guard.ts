@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import crypto from "node:crypto";
+import { getSessionUser, type AuthUser } from "./auth";
+import { verifyRoleSafety } from "./pg";
 
 export function checkGuard(req: NextRequest): NextResponse | null {
   const origin = req.headers.get("origin");
@@ -42,6 +44,44 @@ export function checkGuard(req: NextRequest): NextResponse | null {
   return null;
 }
 
+export async function withAuth(
+  req: NextRequest,
+  handler: (user: AuthUser) => Promise<NextResponse>
+): Promise<NextResponse> {
+  const guardRes = checkGuard(req);
+  if (guardRes) return guardRes;
+
+  const roleCheck = await verifyRoleSafety();
+  if (!roleCheck.safe) {
+    return NextResponse.json({ ok: false, error: roleCheck.error }, { status: 503 });
+  }
+
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: "Sesi tidak valid atau telah berakhir." },
+      { status: 401 }
+    );
+  }
+
+  try {
+    return await handler(user);
+  } catch (err: any) {
+    if (err?.statusCode === 503) {
+      return NextResponse.json(
+        { ok: false, error: err.message || "Layanan database tidak tersedia." },
+        { status: 503 }
+      );
+    }
+    // Pesan error umum ke klien tanpa membocorkan internal DB/stack trace
+    console.error("API handler error:", err);
+    return NextResponse.json(
+      { ok: false, error: err.message || "Terjadi kesalahan pada server." },
+      { status: 500 }
+    );
+  }
+}
+
 export function sha1(str: string): string {
   return crypto.createHash("sha1").update(str, "utf8").digest("hex");
 }
@@ -63,4 +103,3 @@ export function dedupeKeyLead(l: { mapsUrl?: string; name: string; address?: str
   const normAddr = (l.address || "").trim().toLowerCase();
   return sha1(`${normName}|${normAddr}`);
 }
-

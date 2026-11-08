@@ -25,15 +25,44 @@ npm run db:setup
 npm run dev        # http://localhost:3000
 ```
 
-## Database PostgreSQL (Penyimpanan Utama)
+## Database PostgreSQL & Keamanan Data (Multi-Tenant)
 
-Semua data riwayat ulasan produk dan data Lead maps disimpan langsung di database **PostgreSQL**:
-- **Real-time & Cepat:** Antarmuka React diperbarui seketika dari extension tanpa jeda. Data disimpan ke PostgreSQL di latar belakang (*write-behind queue*) secara otomatis.
-- **Perintah Database:**
-  - `npm run db:create`: Membuat database baru di PostgreSQL (bila belum ada).
-  - `npm run db:migrate`: Menjalankan migrasi skema tabel (`db/migrations/`).
-  - `npm run db:setup`: Menjalankan pembuatan database sekaligus migrasi.
-- **Impor Data Lama:** Bila sebelumnya ada data tersimpan di browser (IndexedDB), tombol **Impor ke PostgreSQL** akan otomatis muncul di bagian atas dashboard untuk memindahkan seluruh data lama ke database dalam satu klik.
+Semua data ulasan produk, data Lead maps, grup Facebook, template, dan autopost disimpan langsung di database **PostgreSQL** dengan **isolasi data tiga lapis** per user:
+
+1. **Lapis Aplikasi:** Semua query difilter eksplisit `WHERE user_id = $n` melalui `withUser(userId, fn)` di `lib/server/pg.ts`. Permintaan untuk ID milik user lain atau tidak ditemukan selalu dijawab **404** (bukan 403) agar keberadaan data tidak bocor.
+2. **Lapis Database (Row-Level Security / RLS):** Seluruh 8 tabel data pengguna diproteksi kebijakan RLS `tenant_isolation` yang memeriksa `current_setting('app.user_id', true)::uuid`.
+3. **Kunci Asing Komposit:** Batasan integritas foreign key komposit `(user_id, ...)` mencegah baris anak (ulasan, lead tempat, target run) menunjuk induk milik user lain.
+
+### Peran Database (Superuser vs Role Aplikasi)
+PostgreSQL secara bawaan **mengabaikan RLS untuk akun superuser**. Agar jaring pengaman RLS benar-benar aktif:
+- `DATABASE_ADMIN_URL`: Akun superuser/pemilik database (`postgres`), hanya digunakan untuk pembuatan database (`db:create`), migrasi (`db:migrate`), dan skrip CLI administrator.
+- `DATABASE_URL`: Peran aplikasi biasa (`ulasan_app`) dengan hak akses `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`. Aplikasi berjalan sehari-hari menggunakan peran ini.
+- Bila aplikasi terhubung sebagai superuser dan `ALLOW_SUPERUSER_DB` bernilai `false`, semua rute data menjawab **503** demi mencegah kebocoran data tanpa RLS.
+
+### Perintah Database & Administrasi Akun
+Jalankan perintah berikut di folder `dashboard/`:
+- `npm run db:setup`: Membuat database, menyiapkan peran `ulasan_app`, dan menjalankan migrasi skema.
+- `npm run db:migrate`: Menjalankan migrasi skema terbaru.
+- `npm run user:create -- <email> <password> [display_name]`: Membuat akun pengguna baru via CLI admin.
+- `npm run user:reset-password -- <email> <new_password>`: Mereset kata sandi pengguna dan mencabut semua sesi aktifnya.
+- `npm run data:claim -- <email>`: Mengklaim data lama (sebelum sistem login dipasang, di mana `user_id IS NULL`) menjadi milik akun yang ditentukan.
+- `npm run test:isolation`: Menjalankan *automated test suite* (32 kriteria uji) untuk memverifikasi isolasi multi-tenant, RLS, rate limiting, composite FK, dan revokasi sesi.
+
+### Variabel Lingkungan (.env.local)
+```bash
+# Koneksi aplikasi runtime (role biasa non-superuser, RLS aktif)
+DATABASE_URL=postgres://ulasan_app:ulasan_app_secret123@localhost:5432/ulasan_tokped
+
+# Hanya untuk db:setup, db:migrate, dan skrip CLI admin (superuser)
+DATABASE_ADMIN_URL=postgres://postgres:admin123@localhost:5432/ulasan_tokped
+
+DATABASE_SSL=false
+ALLOW_REGISTRATION=true     # Ubah ke false untuk mematikan pendaftaran akun publik
+TRUST_PROXY=false            # true bila di belakang reverse proxy tepercaya (untuk membaca x-forwarded-for)
+ALLOW_SUPERUSER_DB=false     # true HANYA untuk kebutuhan darurat pengujian lokal tanpa peran ulasan_app
+```
+
+- **Impor Data Lama (IndexedDB):** Bila browser pengguna menyimpan data lama di IndexedDB, banner impor akan muncul satu kali untuk menyalin data tersebut ke akun pengguna yang sedang login.
 
 ## Memasang extension (sekali saja)
 

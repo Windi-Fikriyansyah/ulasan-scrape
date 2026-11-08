@@ -8,15 +8,27 @@ const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl) {
-    console.error("Kesalahan: Variabel lingkungan DATABASE_URL belum diatur di .env.local.");
+  const adminUrl = process.env.DATABASE_ADMIN_URL;
+  const appUrl = process.env.DATABASE_URL;
+
+  if (!adminUrl) {
+    if (appUrl) {
+      console.error(
+        "\nKesalahan: Variabel lingkungan DATABASE_ADMIN_URL belum diatur di .env.local.\n" +
+          "Untuk menjalankan migrasi skema dan RLS, script memerlukan akun administrator (DATABASE_ADMIN_URL).\n\n" +
+          "Silakan tambahkan di file .env.local:\n" +
+          "DATABASE_ADMIN_URL=postgres://postgres:KATA_SANDI_ADMIN@localhost:5432/ulasan_tokped\n" +
+          "DATABASE_URL=postgres://ulasan_app:KATA_SANDI_APP@localhost:5432/ulasan_tokped\n"
+      );
+    } else {
+      console.error("Kesalahan: Variabel lingkungan DATABASE_ADMIN_URL belum diatur di .env.local.");
+    }
     process.exit(1);
   }
 
   const ssl = process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : undefined;
   const client = new Client({
-    connectionString: rawUrl,
+    connectionString: adminUrl,
     ssl,
   });
 
@@ -73,6 +85,20 @@ async function main() {
       }
     }
 
+    // Pastikan hak akses tabel baru diberikan kepada role aplikasi jika ada
+    if (appUrl) {
+      try {
+        const parsedApp = new URL(appUrl);
+        const appRole = decodeURIComponent(parsedApp.username);
+        if (appRole && /^[a-z_][a-z0-9_]*$/.test(appRole)) {
+          await client.query(`
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${appRole}";
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${appRole}";
+          `);
+        }
+      } catch (_) {}
+    }
+
     if (count === 0) {
       console.log("Database sudah mutakhir. Tidak ada migrasi baru.");
     } else {
@@ -84,4 +110,3 @@ async function main() {
 }
 
 main();
-

@@ -4,8 +4,19 @@ import type { ExtEvent } from "./types";
 
 export type ExtStatus = "checking" | "connected" | "missing";
 
+let currentBridgeUserId: string | null = null;
+
+export function setBridgeUser(userId: string | null) {
+  currentBridgeUserId = userId;
+}
+
+export function notifyExtensionLogout(userId?: string) {
+  sendToExtension({ type: "AUTH_LOGOUT", userId: userId || currentBridgeUserId });
+}
+
 export function sendToExtension(msg: Record<string, unknown>) {
-  window.postMessage({ source: "tkp-dashboard", ...msg }, window.location.origin);
+  const payload = currentBridgeUserId ? { userId: currentBridgeUserId, ...msg } : msg;
+  window.postMessage({ source: "tkp-dashboard", ...payload }, window.location.origin);
 }
 
 // Berapa lama tanpa balasan (saat tab terlihat) sebelum dianggap terputus.
@@ -26,6 +37,12 @@ export function useExtension(onEvent: (e: ExtEvent) => void) {
       if (e.source !== window) return;
       const d = e.data;
       if (!d || d.source !== "tkp-extension") return;
+
+      // Isolasi event extension: bila event membawa userId dan berbeda dari user aktif, abaikan
+      if (d.userId && currentBridgeUserId && d.userId !== currentBridgeUserId) {
+        return;
+      }
+
       lastSeen = Date.now();
       if (d.type === "PONG") {
         setVersion(d.version);

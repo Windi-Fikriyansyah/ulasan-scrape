@@ -7,6 +7,7 @@ const DASHBOARDS = [
 ];
 
 let job = null; // { jobId, dashTabId, scrapeTabId, market, type, ... }
+let activeUserId = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, min, max, fallback) => {
@@ -34,6 +35,10 @@ async function setJob(j) {
 }
 
 function emit(tabId, event) {
+  if (event && !event.userId) {
+    const uId = (job && job.userId) || (fbFetchJob && fbFetchJob.userId) || (autopostState && autopostState.userId) || activeUserId;
+    if (uId) event.userId = uId;
+  }
   if (tabId != null) {
     chrome.tabs.sendMessage(tabId, { kind: "tkp-event", event }).catch(() => { });
   }
@@ -119,7 +124,7 @@ async function startJob(cmd, dashTabId) {
   }
 
   const tab = await chrome.tabs.create({ url, active: false });
-  await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id, market, type: "scrape" });
+  await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id, market, type: "scrape", userId: cmd.userId });
 
   const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : "Tokopedia";
   const loaded = await waitForLoad(tab.id);
@@ -267,6 +272,7 @@ async function startFbGroups(cmd, dashTabId) {
   const jobId = "fbfetch_" + Date.now().toString(36);
   fbFetchJob = {
     id: jobId,
+    userId: cmd.userId,
     state: "berjalan",
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -280,7 +286,7 @@ async function startFbGroups(cmd, dashTabId) {
   fbFetchBuffer = [];
   scheduleSaveFbFetchStorage(true);
 
-  await setJob({ dashTabId, scrapeTabId: tab.id, type: "fb-groups" });
+  await setJob({ dashTabId, scrapeTabId: tab.id, type: "fb-groups", userId: cmd.userId });
   emitFbFetchState();
 
   // Batas waktu pengaman 10 menit di background
@@ -410,12 +416,13 @@ async function startAutopostRun(cmd, dashTabId) {
     return;
   }
 
-  await setJob({ jobId: run.id, dashTabId, type: "autopost" });
+  await setJob({ jobId: run.id, dashTabId, type: "autopost", userId: cmd.userId });
 
   autopostState = {
     active: true,
     paused: false,
     stopped: false,
+    userId: cmd.userId,
     run,
     templates: cmd.templates || [],
     targetIndex: 0,
@@ -763,6 +770,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.kind === "tkp-cmd") {
       const cmd = msg.cmd || {};
       const dashTabId = sender.tab && sender.tab.id;
+      if (cmd.userId) {
+        activeUserId = cmd.userId;
+      }
+
+      if (cmd.type === "AUTH_LOGOUT") {
+        const targetUser = cmd.userId;
+        const cur = await getJob();
+        if (cur && (!targetUser || cur.userId === targetUser)) {
+          await endJob(cur);
+        }
+        if (fbFetchJob && (!targetUser || fbFetchJob.userId === targetUser)) {
+          await stopFbGroups();
+        }
+        if (autopostState && autopostState.active && (!targetUser || autopostState.userId === targetUser)) {
+          await stopAutopostRun();
+        }
+        if (targetUser) {
+          chrome.storage.local.remove([
+            `fbFetchJob_${targetUser}`,
+            `fbFetchBuffer_${targetUser}`,
+          ]).catch(() => {});
+        }
+        chrome.storage.local.remove(["fbFetchJob", "fbFetchBuffer"]).catch(() => {});
+        chrome.storage.session.remove("job").catch(() => {});
+        if (!targetUser || activeUserId === targetUser) {
+          activeUserId = null;
+        }
+        sendResponse({ ok: true });
+        return;
+      }
+
       if (cmd.type === "START") await startJob(cmd, dashTabId);
       else if (cmd.type === "STOP") await stopJob();
       else if (cmd.type === "FB_FETCH_GROUPS") await startFbGroups(cmd, dashTabId);
@@ -772,7 +810,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           chrome.tabs.update(fbFetchJob.tabId, { active: true }).catch(() => { });
         }
       } else if (cmd.type === "FB_FETCH_STATUS") {
-        if (fbFetchJob) {
+        if (fbFetchJob && (!cmd.userId || fbFetchJob.userId === cmd.userId)) {
           fbFetchJob.dashTabId = dashTabId;
           emitFbFetchState(dashTabId);
           // Replay grup yang belum di-ack

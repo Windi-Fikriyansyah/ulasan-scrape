@@ -1,3 +1,5 @@
+"use client";
+
 import type { Market } from "@/lib/types";
 
 export const MARKETS: { id: Market; label: string }[] = [

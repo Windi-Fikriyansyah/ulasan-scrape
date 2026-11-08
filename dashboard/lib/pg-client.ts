@@ -1,13 +1,20 @@
 import type { Job, Lead, LeadJob, Review } from "./types";
+import { checkResponseAuth } from "./auth-client";
 
 const HEADERS = {
   "Content-Type": "application/json",
   "X-Ulasan-Client": "1",
 };
 
+async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init);
+  await checkResponseAuth(res);
+  return res;
+}
+
 export async function checkDbStatus(): Promise<{ ok: boolean; message?: string; error?: string }> {
   try {
-    const res = await fetch("/api/db/status", { cache: "no-store" });
+    const res = await authFetch("/api/db/status", { cache: "no-store" });
     const data = await res.json();
     return data;
   } catch (err: any) {
@@ -16,21 +23,21 @@ export async function checkDbStatus(): Promise<{ ok: boolean; message?: string; 
 }
 
 export async function fetchJobs(): Promise<Job[]> {
-  const res = await fetch("/api/jobs", { cache: "no-store" });
+  const res = await authFetch("/api/jobs", { cache: "no-store" });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || "Gagal mengambil data ulasan.");
   return data.jobs || [];
 }
 
 export async function fetchLeadJobs(): Promise<LeadJob[]> {
-  const res = await fetch("/api/leads", { cache: "no-store" });
+  const res = await authFetch("/api/leads", { cache: "no-store" });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || "Gagal mengambil data lead maps.");
   return data.jobs || [];
 }
 
 export async function deleteJobRemote(id: string): Promise<void> {
-  const res = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`/api/jobs/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: HEADERS,
   });
@@ -39,7 +46,7 @@ export async function deleteJobRemote(id: string): Promise<void> {
 }
 
 export async function deleteLeadJobRemote(id: string): Promise<void> {
-  const res = await fetch(`/api/leads/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`/api/leads/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: HEADERS,
   });
@@ -51,7 +58,7 @@ export async function importFromIndexedDb(
   jobs: Job[],
   leadJobs: LeadJob[]
 ): Promise<{ importedJobs: number; importedReviews: number; importedLeadJobs: number; importedLeads: number }> {
-  const res = await fetch("/api/db/import", {
+  const res = await authFetch("/api/db/import", {
     method: "POST",
     headers: HEADERS,
     body: JSON.stringify({ jobs, leadJobs }),
@@ -103,7 +110,7 @@ class WriteBehindQueue {
     this.inFlightCount++;
     this.updateBeforeUnload();
 
-    fetch("/api/jobs", {
+    authFetch("/api/jobs", {
       method: "POST",
       headers: HEADERS,
       body: JSON.stringify({
@@ -130,7 +137,7 @@ class WriteBehindQueue {
     this.inFlightCount++;
     this.updateBeforeUnload();
 
-    fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+    authFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
       method: "PATCH",
       headers: HEADERS,
       body: JSON.stringify(meta),
@@ -179,7 +186,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/jobs/${encodeURIComponent(jobId)}/reviews`, {
+      await authFetch(`/api/jobs/${encodeURIComponent(jobId)}/reviews`, {
         method: "POST",
         headers: HEADERS,
         body: JSON.stringify({
@@ -203,7 +210,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      await authFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
         method: "PATCH",
         headers: HEADERS,
         body: JSON.stringify({ status, finishedAt }),
@@ -223,7 +230,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      await authFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
         method: "PATCH",
         headers: HEADERS,
         body: JSON.stringify({ status: "error", error, finishedAt }),
@@ -241,7 +248,7 @@ class WriteBehindQueue {
     this.inFlightCount++;
     this.updateBeforeUnload();
 
-    fetch("/api/leads", {
+    authFetch("/api/leads", {
       method: "POST",
       headers: HEADERS,
       body: JSON.stringify({
@@ -267,7 +274,7 @@ class WriteBehindQueue {
     this.inFlightCount++;
     this.updateBeforeUnload();
 
-    fetch(`/api/leads/${encodeURIComponent(jobId)}`, {
+    authFetch(`/api/leads/${encodeURIComponent(jobId)}`, {
       method: "PATCH",
       headers: HEADERS,
       body: JSON.stringify({ sample }),
@@ -314,7 +321,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/leads/${encodeURIComponent(jobId)}/items`, {
+      await authFetch(`/api/leads/${encodeURIComponent(jobId)}/items`, {
         method: "POST",
         headers: HEADERS,
         body: JSON.stringify({
@@ -337,7 +344,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/leads/${encodeURIComponent(jobId)}`, {
+      await authFetch(`/api/leads/${encodeURIComponent(jobId)}`, {
         method: "PATCH",
         headers: HEADERS,
         body: JSON.stringify({ status, finishedAt }),
@@ -357,7 +364,7 @@ class WriteBehindQueue {
     this.updateBeforeUnload();
 
     try {
-      await fetch(`/api/leads/${encodeURIComponent(jobId)}`, {
+      await authFetch(`/api/leads/${encodeURIComponent(jobId)}`, {
         method: "PATCH",
         headers: HEADERS,
         body: JSON.stringify({ status: "error", error, finishedAt }),

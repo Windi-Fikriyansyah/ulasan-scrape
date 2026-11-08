@@ -8,7 +8,11 @@
     "start": "next start -p 3000",
     "db:create": "node scripts/create-db.mjs",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:setup": "npm run db:create && npm run db:migrate"
+    "db:setup": "npm run db:create && npm run db:migrate",
+    "user:create": "node scripts/user-create.mjs",
+    "user:reset-password": "node scripts/user-reset-password.mjs",
+    "data:claim": "node scripts/data-claim.mjs",
+    "test:isolation": "node scripts/test-isolation.mjs"
   },
   "dependencies": {
     "next": "^15.1.0",

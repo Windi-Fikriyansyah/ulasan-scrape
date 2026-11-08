@@ -492,3 +492,67 @@ h1, h2, h3 { margin: 0; line-height: 1; }
   }
 }
 
+
+
+/* ---------- Autentikasi & Akun ---------- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+}
+.auth-title {
+  margin-bottom: 24px;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.auth-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auth-field-group label {
+  font-weight: 700;
+  font-size: 14px;
+}
+.auth-switch {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.auth-user-block {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 2px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auth-user-name {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auth-user-email {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

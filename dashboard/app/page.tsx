@@ -15,6 +15,8 @@ import {
 } from "@/lib/pg-client";
 import { cleanReview, newId, normalizeProductUrl, normalizeShopeeUrl } from "@/lib/analysis";
 import { buildMapsUrl, validateLeadInput } from "@/lib/leads";
+import { getMe, logoutClient, type UserProfile } from "@/lib/auth-client";
+import { setBridgeUser } from "@/lib/bridge";
 import Sidebar, { type MenuId } from "@/components/Sidebar";
 import MarketTabs, { MARKETS } from "@/components/MarketTabs";
 import Gate from "@/components/Gate";
@@ -25,6 +27,7 @@ import LeadCapture from "@/components/LeadCapture";
 import LeadArchive from "@/components/LeadArchive";
 import LeadReport from "@/components/LeadReport";
 import AutopostView from "@/components/autopost/AutopostView";
+import AccountView from "@/components/AccountView";
 
 const marketOf = (j: Job): Market => j.market ?? "tokopedia";
 const ERR_DISCONNECTED = "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.";
@@ -49,6 +52,10 @@ export default function Home() {
   const [dbStatus, setDbStatus] = useState<{ ok: boolean; message?: string; error?: string } | undefined>(undefined);
   const [legacyDataCount, setLegacyDataCount] = useState<{ jobs: number; leads: number } | null>(null);
   const [importing, setImporting] = useState(false);
+
+  // State autentikasi pengguna
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [superuserWarning, setSuperuserWarning] = useState<boolean>(false);
 
   const jobsRef = useRef<Job[]>([]);
   const runningRef = useRef<string | null>(null);
@@ -230,6 +237,14 @@ export default function Home() {
 
   // Muat status PostgreSQL dan riwayat saat aplikasi pertama kali dibuka
   useEffect(() => {
+    getMe().then(({ user: u, superuserWarning: warn }) => {
+      setUser(u);
+      setSuperuserWarning(!!warn);
+      if (u) {
+        setBridgeUser(u.id);
+      }
+    });
+
     checkDbStatus().then((s) => setDbStatus(s));
 
     fetchJobs()
@@ -249,12 +264,15 @@ export default function Home() {
       .catch((err) => console.error("Gagal memuat lead maps dari Postgres:", err))
       .finally(() => setLeadLoaded(true));
 
-    // Periksa apakah ada data lama di IndexedDB (browser) untuk ditawarkan impor
-    Promise.all([listJobs().catch(() => []), listLeadJobs().catch(() => [])]).then(([oldJobs, oldLeads]) => {
-      if (oldJobs.length > 0 || oldLeads.length > 0) {
-        setLegacyDataCount({ jobs: oldJobs.length, leads: oldLeads.length });
-      }
-    });
+    // Periksa apakah ada data lama di IndexedDB (browser) untuk ditawarkan impor jika belum pernah diimpor
+    const legacyDone = typeof localStorage !== "undefined" && localStorage.getItem("ulasan-tokped:legacy-import-done");
+    if (!legacyDone) {
+      Promise.all([listJobs().catch(() => []), listLeadJobs().catch(() => [])]).then(([oldJobs, oldLeads]) => {
+        if (oldJobs.length > 0 || oldLeads.length > 0) {
+          setLegacyDataCount({ jobs: oldJobs.length, leads: oldLeads.length });
+        }
+      });
+    }
   }, []);
 
   // Extension terputus saat pengambilan berjalan
@@ -292,12 +310,15 @@ export default function Home() {
     try {
       const [oldJobs, oldLeads] = await Promise.all([listJobs(), listLeadJobs()]);
       const res = await importFromIndexedDb(oldJobs, oldLeads);
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("ulasan-tokped:legacy-import-done", "1");
+      }
       const [newJobs, newLeads] = await Promise.all([fetchJobs(), fetchLeadJobs()]);
       commit(newJobs);
       commitLead(newLeads);
       setLegacyDataCount(null);
       alert(
-        `Berhasil mengimpor ${res.importedJobs} riwayat ulasan (${res.importedReviews} ulasan) dan ${res.importedLeadJobs} riwayat lead maps (${res.importedLeads} tempat) ke PostgreSQL!`
+        `Berhasil mengimpor ${res.importedJobs} riwayat ulasan (${res.importedReviews} ulasan) dan ${res.importedLeadJobs} riwayat lead maps (${res.importedLeads} tempat) ke akun Anda di PostgreSQL!`
       );
     } catch (err: any) {
       alert(`Gagal mengimpor data ke PostgreSQL: ${err.message}`);
@@ -443,9 +464,32 @@ export default function Home() {
 
   return (
     <div className="app">
-      <Sidebar menu={menu} onMenu={setMenu} status={ext.status} version={ext.version} dbStatus={dbStatus} />
+      <Sidebar
+        menu={menu}
+        onMenu={setMenu}
+        status={ext.status}
+        version={ext.version}
+        dbStatus={dbStatus}
+        user={user}
+        onLogout={() => logoutClient(user?.id)}
+      />
 
       <div className="content">
+        {superuserWarning && (
+          <div
+            className="note warn"
+            style={{
+              marginTop: "24px",
+              border: "2px solid var(--tape)",
+              background: "#fff",
+              padding: "12px 16px",
+            }}
+            role="alert"
+          >
+            <b>Peringatan Keamanan:</b> Aplikasi berjalan menggunakan peran superuser database (ALLOW_SUPERUSER_DB=true). Jaring pengaman Row-Level Security dinonaktifkan oleh PostgreSQL untuk superuser.
+          </div>
+        )}
+
         {dbStatus && !dbStatus.ok && (
           <div className="note" style={{ marginTop: "24px", borderColor: "var(--red)", background: "rgba(201, 58, 36, 0.08)" }} role="alert">
             <b>Perhatian Database:</b> {dbStatus.error || "PostgreSQL belum terhubung."} Pastikan PostgreSQL sudah aktif dan konfigurasi pada <code>.env.local</code> sudah benar.
@@ -589,6 +633,10 @@ export default function Home() {
             sendToExtension={ext.send}
             registerEventHandler={registerAutopostListener}
           />
+        )}
+
+        {menu === "akun" && (
+          <AccountView user={user} superuserWarning={superuserWarning} />
         )}
       </div>
     </div>

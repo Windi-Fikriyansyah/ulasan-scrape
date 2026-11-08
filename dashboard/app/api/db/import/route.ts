@@ -1,16 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { checkGuard, dedupeKeyLead, dedupeKeyReview } from "@/lib/server/guard";
-import { getPool } from "@/lib/server/pg";
+import { withAuth, dedupeKeyLead, dedupeKeyReview } from "@/lib/server/guard";
+import { withUser } from "@/lib/server/pg";
 import type { Job, LeadJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const guard = checkGuard(req);
-  if (guard) return guard;
+  return withAuth(req, async (user) => {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (_) {
+      return NextResponse.json({ ok: false, error: "Body JSON tidak valid." }, { status: 400 });
+    }
 
-  try {
-    const body = await req.json();
     const jobs: Job[] = Array.isArray(body.jobs) ? body.jobs : [];
     const leadJobs: LeadJob[] = Array.isArray(body.leadJobs) ? body.leadJobs : [];
 
@@ -18,37 +21,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Tidak ada data untuk diimpor." }, { status: 400 });
     }
 
-    const pool = getPool();
-    const client = await pool.connect();
-
     let importedJobs = 0;
     let importedReviews = 0;
     let importedLeadJobs = 0;
     let importedLeads = 0;
 
-    try {
-      await client.query("BEGIN");
-
+    await withUser(user.id, async (client) => {
       // 1. Impor review jobs dan reviews
       for (const j of jobs) {
         if (!j.id || !j.url) continue;
 
         const mkt = ["tokopedia", "shopee", "lazada"].includes(j.market || "") ? j.market : "tokopedia";
-        const st = ["running", "done", "stopped", "error"].includes(j.status) ? (j.status === "running" ? "stopped" : j.status) : "stopped";
+        const st = ["running", "done", "stopped", "error"].includes(j.status)
+          ? j.status === "running"
+            ? "stopped"
+            : j.status
+          : "stopped";
 
         await client.query(
           `
           INSERT INTO review_jobs (
-            id, market, url, title, image, sample, status, error, page, max_pages, started_at, finished_at
+            user_id, id, market, url, title, image, sample, status, error, page, max_pages, started_at, finished_at
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            to_timestamp($11 / 1000.0),
-            CASE WHEN $12::bigint IS NOT NULL THEN to_timestamp($12 / 1000.0) ELSE NULL END
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            to_timestamp($12 / 1000.0),
+            CASE WHEN $13::bigint IS NOT NULL THEN to_timestamp($13 / 1000.0) ELSE NULL END
           )
-          ON CONFLICT (id) DO NOTHING;
+          ON CONFLICT (user_id, id) DO NOTHING;
         `,
           [
+            user.id,
             j.id.slice(0, 100),
             mkt,
             j.url.slice(0, 2000),
@@ -82,21 +85,35 @@ export async function POST(req: NextRequest) {
               const dateText = String(r.date || "").slice(0, 100);
               const variant = String(r.variant || "").slice(0, 300);
               const reviewText = String(r.review || "").slice(0, 20000);
-              const imagesJson = JSON.stringify(Array.isArray(r.images) ? r.images.map((s) => String(s).slice(0, 2000)) : []);
+              const imagesJson = JSON.stringify(
+                Array.isArray(r.images) ? r.images.map((s) => String(s).slice(0, 2000)) : []
+              );
               const sellerReply = String(r.seller_reply || "").slice(0, 10000);
 
               valuePlaceholders.push(
-                `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
+                `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
               );
-              rows.push(j.id, dedupeKey, name, avatar, rating, dateText, variant, reviewText, imagesJson, sellerReply);
+              rows.push(
+                user.id,
+                j.id,
+                dedupeKey,
+                name,
+                avatar,
+                rating,
+                dateText,
+                variant,
+                reviewText,
+                imagesJson,
+                sellerReply
+              );
             }
 
             const sql = `
               INSERT INTO reviews (
-                job_id, dedupe_key, name, avatar, rating, date_text, variant, review, images, seller_reply
+                user_id, job_id, dedupe_key, name, avatar, rating, date_text, variant, review, images, seller_reply
               )
               VALUES ${valuePlaceholders.join(", ")}
-              ON CONFLICT (job_id, dedupe_key) DO NOTHING;
+              ON CONFLICT (user_id, job_id, dedupe_key) DO NOTHING;
             `;
 
             await client.query(sql, rows);
@@ -109,22 +126,27 @@ export async function POST(req: NextRequest) {
       for (const lj of leadJobs) {
         if (!lj.id || !lj.url) continue;
 
-        const st = ["running", "done", "stopped", "error"].includes(lj.status) ? (lj.status === "running" ? "stopped" : lj.status) : "stopped";
+        const st = ["running", "done", "stopped", "error"].includes(lj.status)
+          ? lj.status === "running"
+            ? "stopped"
+            : lj.status
+          : "stopped";
         const flds = Array.isArray(lj.fields) ? lj.fields.map((s) => String(s).slice(0, 50)) : [];
 
         await client.query(
           `
           INSERT INTO lead_jobs (
-            id, keyword, location, url, fields, max_results, status, error, found, sample, started_at, finished_at
+            user_id, id, keyword, location, url, fields, max_results, status, error, found, sample, started_at, finished_at
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            to_timestamp($11 / 1000.0),
-            CASE WHEN $12::bigint IS NOT NULL THEN to_timestamp($12 / 1000.0) ELSE NULL END
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            to_timestamp($12 / 1000.0),
+            CASE WHEN $13::bigint IS NOT NULL THEN to_timestamp($13 / 1000.0) ELSE NULL END
           )
-          ON CONFLICT (id) DO NOTHING;
+          ON CONFLICT (user_id, id) DO NOTHING;
         `,
           [
+            user.id,
             lj.id.slice(0, 100),
             (lj.keyword || "").slice(0, 300),
             (lj.location || "").slice(0, 300),
@@ -157,8 +179,14 @@ export async function POST(req: NextRequest) {
               const address = l.address ? String(l.address).slice(0, 1000) : null;
               const phone = l.phone ? String(l.phone).slice(0, 100) : null;
               const website = l.website ? String(l.website).slice(0, 2000) : null;
-              const rating = typeof l.rating === "number" && Number.isFinite(l.rating) ? Math.max(0, Math.min(5, l.rating)) : null;
-              const reviewsCount = typeof l.reviews === "number" && Number.isFinite(l.reviews) ? Math.max(0, Math.round(l.reviews)) : null;
+              const rating =
+                typeof l.rating === "number" && Number.isFinite(l.rating)
+                  ? Math.max(0, Math.min(5, l.rating))
+                  : null;
+              const reviewsCount =
+                typeof l.reviews === "number" && Number.isFinite(l.reviews)
+                  ? Math.max(0, Math.round(l.reviews))
+                  : null;
               const hours = l.hours ? String(l.hours).slice(0, 2000) : null;
               const lat = typeof l.lat === "number" && Number.isFinite(l.lat) ? l.lat : null;
               const lng = typeof l.lng === "number" && Number.isFinite(l.lng) ? l.lng : null;
@@ -166,17 +194,33 @@ export async function POST(req: NextRequest) {
               const status = l.status ? String(l.status).slice(0, 200) : null;
 
               valuePlaceholders.push(
-                `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
+                `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++})`
               );
-              rows.push(lj.id, dedupeKey, name, category, address, phone, website, rating, reviewsCount, hours, lat, lng, mapsUrl, status);
+              rows.push(
+                user.id,
+                lj.id,
+                dedupeKey,
+                name,
+                category,
+                address,
+                phone,
+                website,
+                rating,
+                reviewsCount,
+                hours,
+                lat,
+                lng,
+                mapsUrl,
+                status
+              );
             }
 
             const sql = `
               INSERT INTO leads (
-                job_id, dedupe_key, name, category, address, phone, website, rating, reviews_count, hours, lat, lng, maps_url, status
+                user_id, job_id, dedupe_key, name, category, address, phone, website, rating, reviews_count, hours, lat, lng, maps_url, status
               )
               VALUES ${valuePlaceholders.join(", ")}
-              ON CONFLICT (job_id, dedupe_key) DO NOTHING;
+              ON CONFLICT (user_id, job_id, dedupe_key) DO NOTHING;
             `;
 
             await client.query(sql, rows);
@@ -184,27 +228,14 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+    });
 
-      await client.query("COMMIT");
-
-      return NextResponse.json({
-        ok: true,
-        importedJobs,
-        importedReviews,
-        importedLeadJobs,
-        importedLeads,
-      });
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: `Gagal mengimpor data ke PostgreSQL: ${err.message}` },
-      { status: 500 }
-    );
-  }
+    return NextResponse.json({
+      ok: true,
+      importedJobs,
+      importedReviews,
+      importedLeadJobs,
+      importedLeads,
+    });
+  });
 }
-
