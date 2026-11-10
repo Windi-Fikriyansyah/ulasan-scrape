@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { Job } from "@/lib/types";
+import EmbedReviewModal from "./EmbedReviewModal";
 import {
   dateTime,
   download,
@@ -120,6 +121,7 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
   const [photo, setPhoto] = useState(false);
   const [sort, setSort] = useState<SortKey>("asli");
   const [limit, setLimit] = useState(STEP);
+  const [showEmbedModal, setShowEmbedModal] = useState(false);
 
   const sum = useMemo(() => summarize(job.reviews), [job.reviews]);
   const shown = useMemo(
@@ -211,6 +213,15 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
           </button>
           <button
             type="button"
+            className="btn solid"
+            disabled={!job.reviews.length}
+            onClick={() => setShowEmbedModal(true)}
+            title="Salin blok HTML untuk ditampilkan di Scalev, Formulir, Mayar, dll."
+          >
+            Salin Block HTML
+          </button>
+          <button
+            type="button"
             className="btn quiet"
             onClick={() => {
               if (confirm("Hapus riwayat ini beserta semua ulasannya?")) onDelete();
@@ -271,6 +282,10 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
       </section>
 
       {job.sample && <Diagnosis sample={job.sample} marketLabel={marketLabel} />}
+
+      {showEmbedModal && (
+        <EmbedReviewModal job={job} onClose={() => setShowEmbedModal(false)} />
+      )}
     </article>
   );
 }
