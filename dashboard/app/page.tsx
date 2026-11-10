@@ -71,6 +71,14 @@ export default function Home() {
     };
   };
 
+  const handleMenuChange = (id: MenuId) => {
+    setMenu(id);
+    const slug = id === "ambil" ? "/" : `/${id}`;
+    if (typeof window !== "undefined" && window.location.pathname !== slug) {
+      window.history.pushState(null, "", slug);
+    }
+  };
+
   const commit = (next: Job[]) => {
     jobsRef.current = next;
     setJobs(next);
@@ -276,6 +284,36 @@ export default function Home() {
     }
   }, []);
 
+  // Sinkronisasi menu aktif dari URL slug (/lead, /autopost, /akun) atau parameter URL
+  useEffect(() => {
+    const syncFromUrl = () => {
+      if (typeof window === "undefined") return;
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+      if (path === "lead" || path === "autopost" || path === "akun" || path === "ambil") {
+        setMenu(path as MenuId);
+        return;
+      }
+      const param = new URLSearchParams(window.location.search).get("menu");
+      if (param === "lead" || param === "autopost" || param === "akun" || param === "ambil") {
+        setMenu(param as MenuId);
+        return;
+      }
+      const hash = window.location.hash.replace(/^#/, "");
+      if (hash === "lead" || hash === "autopost" || hash === "akun" || hash === "ambil") {
+        setMenu(hash as MenuId);
+        return;
+      }
+    };
+
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    window.addEventListener("hashchange", syncFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncFromUrl);
+      window.removeEventListener("hashchange", syncFromUrl);
+    };
+  }, []);
+
   // Extension terputus saat pengambilan berjalan
   useEffect(() => {
     if (ext.status === "missing") {
@@ -467,7 +505,7 @@ export default function Home() {
     <div className="app">
       <Sidebar
         menu={menu}
-        onMenu={setMenu}
+        onMenu={handleMenuChange}
         status={ext.status}
         version={ext.version}
         dbStatus={dbStatus}
