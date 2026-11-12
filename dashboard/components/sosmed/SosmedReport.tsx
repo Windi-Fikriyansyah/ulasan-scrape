@@ -49,6 +49,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
   const [q, setQ] = useState("");
   const [hasPhone, setHasPhone] = useState(false);
   const [hasEmail, setHasEmail] = useState(false);
+  const [showSnippet, setShowSnippet] = useState(false);
   const [limit, setLimit] = useState(STEP);
   const [copiedPhones, setCopiedPhones] = useState(false);
 
@@ -85,7 +86,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
   };
 
   return (
-    <article className="sheet">
+    <article className="sheet" style={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
         <div>
           <span
@@ -103,7 +104,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
           >
             {platformLabel}
           </span>
-          <h1 style={{ margin: 0 }}>
+          <h1 style={{ margin: 0, wordBreak: "break-word" }}>
             {job.keyword} di {job.location}
           </h1>
         </div>
@@ -139,7 +140,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
         </div>
       </div>
 
-      <p className="src" style={{ marginTop: "8px" }}>
+      <p className="src" style={{ marginTop: "8px", wordBreak: "break-all", overflowWrap: "anywhere" }}>
         <a href={job.url} target="_blank" rel="noreferrer">
           Buka query di Google Search: <code>{job.query}</code>
         </a>
@@ -151,17 +152,29 @@ export default function SosmedReport({ job, onDelete }: Props) {
         {summaryText}
       </p>
 
-      <section className="filter" aria-label="Penyaring data">
+      <section
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "10px 12px",
+          marginTop: "20px",
+          padding: "14px 0",
+          borderTop: "2px solid var(--ink)",
+        }}
+        aria-label="Penyaring data"
+      >
         <input
           type="search"
-          className="fill"
+          className="field"
+          style={{ flex: "1 1 200px", maxWidth: "340px", padding: "6px 10px" }}
           placeholder="Cari judul, bio, nomor telepon, atau tautan..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Cari data"
         />
 
-        <div className="chips">
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <button
             type="button"
             className="chip"
@@ -181,9 +194,20 @@ export default function SosmedReport({ job, onDelete }: Props) {
             <span className="sw" style={{ background: hasEmail ? "var(--ink)" : "transparent" }} />
             <span>Ada Email</span>
           </button>
+
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={showSnippet}
+            onClick={() => setShowSnippet(!showSnippet)}
+            title="Tampilkan atau sembunyikan kolom cuplikan teks di tabel"
+          >
+            <span className="sw" style={{ background: showSnippet ? "var(--ink)" : "transparent" }} />
+            <span>Tampilkan Cuplikan</span>
+          </button>
         </div>
 
-        <span className="count">
+        <span className="count" style={{ marginLeft: "auto", fontSize: "13px", color: "var(--muted)" }}>
           Menampilkan {nf0.format(shown.length)} dari {nf0.format(job.leads.length)} data
         </span>
       </section>
@@ -192,16 +216,20 @@ export default function SosmedReport({ job, onDelete }: Props) {
         <p className="empty-sub">Tidak ada data yang cocok dengan penyaring.</p>
       ) : (
         <>
-          <div className="table-wrap">
-            <table className="tbl" aria-label="Daftar profil dan kontak social media">
+          <div className="lead-table-wrap" style={{ maxWidth: "100%", overflowX: "auto" }}>
+            <table
+              className="lead-table"
+              style={{ width: "100%", tableLayout: "auto" }}
+              aria-label="Daftar profil dan kontak social media"
+            >
               <thead>
                 <tr>
-                  <th style={{ width: "40px" }}>No</th>
-                  <th style={{ minWidth: "180px" }}>Akun / Judul</th>
-                  <th style={{ minWidth: "150px" }}>WhatsApp / Telepon</th>
-                  <th style={{ minWidth: "160px" }}>Email</th>
-                  <th style={{ minWidth: "240px" }}>Cuplikan Snippet</th>
-                  <th style={{ width: "80px" }}>Tautan</th>
+                  <th style={{ width: "44px", textAlign: "center" }}>No</th>
+                  <th style={{ minWidth: "220px" }}>Akun / Judul</th>
+                  <th style={{ width: "170px", minWidth: "150px" }}>WhatsApp / Telepon</th>
+                  <th style={{ width: "170px", minWidth: "140px" }}>Email</th>
+                  {showSnippet && <th style={{ minWidth: "240px" }}>Cuplikan Snippet</th>}
+                  <th style={{ width: "70px", textAlign: "center" }}>Tautan</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,8 +243,8 @@ export default function SosmedReport({ job, onDelete }: Props) {
 
                   return (
                     <tr key={idx}>
-                      <td style={{ color: "var(--muted)", fontSize: "12px" }}>{idx + 1}</td>
-                      <td>
+                      <td style={{ textAlign: "center", color: "var(--muted)", fontSize: "12px" }}>{idx + 1}</td>
+                      <td style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
                         <a
                           href={lead.url}
                           target="_blank"
@@ -226,7 +254,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
                           {lead.title}
                         </a>
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         {lead.phone ? (
                           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                             <span style={{ fontFamily: "monospace", fontSize: "13px" }}>{lead.phone}</span>
@@ -254,7 +282,7 @@ export default function SosmedReport({ job, onDelete }: Props) {
                           <span style={{ color: "var(--muted)" }}>—</span>
                         )}
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: "normal", wordBreak: "break-all" }}>
                         {lead.email ? (
                           <a href={`mailto:${lead.email}`} style={{ color: "var(--ink)" }}>
                             {lead.email}
@@ -263,10 +291,12 @@ export default function SosmedReport({ job, onDelete }: Props) {
                           <span style={{ color: "var(--muted)" }}>—</span>
                         )}
                       </td>
-                      <td style={{ fontSize: "13px", lineHeight: 1.4, color: "#333" }}>
-                        {lead.snippet || "—"}
-                      </td>
-                      <td>
+                      {showSnippet && (
+                        <td style={{ whiteSpace: "normal", wordBreak: "break-word", fontSize: "13px", lineHeight: 1.4, color: "#333" }}>
+                          {lead.snippet || "—"}
+                        </td>
+                      )}
+                      <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
                         <a
                           href={lead.url}
                           target="_blank"

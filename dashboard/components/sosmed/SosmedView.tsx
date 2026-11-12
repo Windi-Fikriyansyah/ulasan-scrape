@@ -218,7 +218,7 @@ export default function SosmedView({
           onSelect={setSelectedId}
         />
 
-        <main>
+        <main style={{ minWidth: 0, maxWidth: "100%" }}>
           {selectedJob ? (
             <SosmedReport
               key={selectedJob.id}
