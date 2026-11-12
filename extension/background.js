@@ -113,12 +113,15 @@ async function startJob(cmd, dashTabId) {
       if (u.hostname !== "shopee.co.id") throw new Error("bad");
     } else if (market === "gmaps") {
       if (u.hostname !== "www.google.com" || !u.pathname.startsWith("/maps")) throw new Error("bad");
+    } else if (market === "sosmed") {
+      const h = u.hostname.toLowerCase();
+      if ((h !== "www.google.com" && h !== "www.google.co.id" && h !== "google.com") || !u.pathname.startsWith("/search")) throw new Error("bad");
     } else {
       throw new Error("bad");
     }
     url = u.href;
   } catch (_) {
-    const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : "Tokopedia";
+    const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : market === "sosmed" ? "Google Search" : "Tokopedia";
     emit(dashTabId, { type: "ERROR", jobId: cmd.jobId, message: `Link itu bukan halaman ${label}.` });
     return;
   }
@@ -126,12 +129,13 @@ async function startJob(cmd, dashTabId) {
   const tab = await chrome.tabs.create({ url, active: false });
   await setJob({ jobId: cmd.jobId, dashTabId, scrapeTabId: tab.id, market, type: "scrape", userId: cmd.userId });
 
-  const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : "Tokopedia";
+  const label = market === "shopee" ? "Shopee" : market === "gmaps" ? "Google Maps" : market === "sosmed" ? "Google Search" : "Tokopedia";
   const loaded = await waitForLoad(tab.id);
   if (!loaded) return failJob(`Halaman ${label} tidak selesai dimuat dalam 45 detik.`);
 
   const options = {
     ...(cmd.options || {}),
+    maxResults: clamp(cmd.options && cmd.options.maxResults, 1, 1000, 50),
     maxPages: clamp(cmd.options && cmd.options.maxPages, 1, 200, 10),
     delay: clamp(cmd.options && cmd.options.delay, 500, 10000, 1200),
   };
@@ -670,6 +674,11 @@ async function handleScrape(msg, senderTabId) {
         emit(j.dashTabId, { type: "LEADS", jobId: j.jobId, found: msg.found, leads: msg.leads });
       }
       break;
+    case "sosmed-leads":
+      if (senderTabId === j.scrapeTabId) {
+        emit(j.dashTabId, { type: "SOSMED_LEADS", jobId: j.jobId, found: msg.found, leads: msg.leads });
+      }
+      break;
     case "done":
       if (senderTabId === j.scrapeTabId) {
         emit(j.dashTabId, { type: "DONE", jobId: j.jobId, stopped: !!msg.stopped });
@@ -885,7 +894,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       }
       await setJob(null);
     } else {
-      const label = j.market === "shopee" ? "Shopee" : j.market === "gmaps" ? "Google Maps" : "Tokopedia";
+      const label = j.market === "shopee" ? "Shopee" : j.market === "gmaps" ? "Google Maps" : j.market === "sosmed" ? "Google Search" : "Tokopedia";
       emit(j.dashTabId, {
         type: "ERROR",
         jobId: j.jobId,

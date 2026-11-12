@@ -14,6 +14,9 @@
     "https://www.tokopedia.com/*",
     "https://shopee.co.id/*",
     "https://www.google.com/maps/*",
+    "https://www.google.com/search*",
+    "https://www.google.co.id/search*",
+    "https://*.google.com/search*",
     "https://*.facebook.com/*",
     "https://facebook.com/*"
   ],
@@ -58,6 +61,17 @@
       ],
       "js": [
         "maps-scraper.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.google.com/search*",
+        "https://www.google.co.id/search*",
+        "https://*.google.com/search*"
+      ],
+      "js": [
+        "sosmed-scraper.js"
       ],
       "run_at": "document_idle"
     },

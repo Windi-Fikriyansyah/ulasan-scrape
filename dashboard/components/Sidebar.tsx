@@ -7,6 +7,7 @@ import type { UserProfile } from "@/lib/auth-client";
 export const MENUS = [
   { id: "ambil", label: "Ambil reviews" },
   { id: "lead", label: "Lead maps" },
+  { id: "sosmed", label: "Scrape sosmed" },
   { id: "autopost", label: "Autopost grup" },
   { id: "akun", label: "Akun" },
 ] as const;

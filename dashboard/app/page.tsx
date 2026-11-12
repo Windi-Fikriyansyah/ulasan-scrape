@@ -28,6 +28,7 @@ import LeadArchive from "@/components/LeadArchive";
 import LeadReport from "@/components/LeadReport";
 import AutopostView from "@/components/autopost/AutopostView";
 import AccountView from "@/components/AccountView";
+import SosmedView from "@/components/sosmed/SosmedView";
 
 const marketOf = (j: Job): Market => j.market ?? "tokopedia";
 const ERR_DISCONNECTED = "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.";
@@ -68,6 +69,14 @@ export default function Home() {
     autopostListenersRef.current.add(fn);
     return () => {
       autopostListenersRef.current.delete(fn);
+    };
+  };
+
+  const sosmedListenersRef = useRef<Set<(e: ExtEvent) => void>>(new Set());
+  const registerSosmedListener = (fn: (e: ExtEvent) => void) => {
+    sosmedListenersRef.current.add(fn);
+    return () => {
+      sosmedListenersRef.current.delete(fn);
     };
   };
 
@@ -192,6 +201,9 @@ export default function Home() {
           if (runningRef.current === e.jobId) setRunning(null);
           pgQueue.finishJob(e.jobId, e.stopped ? "stopped" : "done", now);
         }
+        for (const listener of sosmedListenersRef.current) {
+          listener(e);
+        }
         break;
       }
 
@@ -222,6 +234,16 @@ export default function Home() {
           }
         }
         for (const listener of autopostListenersRef.current) {
+          listener(e);
+        }
+        for (const listener of sosmedListenersRef.current) {
+          listener(e);
+        }
+        break;
+      }
+
+      case "SOSMED_LEADS": {
+        for (const listener of sosmedListenersRef.current) {
           listener(e);
         }
         break;
@@ -665,6 +687,16 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        <div style={{ display: menu === "sosmed" ? "block" : "none" }}>
+          <SosmedView
+            isExtensionConnected={ext.status === "connected"}
+            sendToExtension={ext.send}
+            registerEventHandler={registerSosmedListener}
+            userId={user?.id}
+            otherRunning={runningId !== null || runningLeadId !== null}
+          />
+        </div>
 
         <div style={{ display: menu === "autopost" ? "block" : "none" }}>
           <AutopostView

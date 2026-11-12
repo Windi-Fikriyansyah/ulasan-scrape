@@ -78,7 +78,8 @@ export type ExtEvent =
   | { type: "FB_TARGET"; runId: string; target: PostTarget }
   | { type: "FB_RUN"; run: PostRun }
   | { type: "FB_RUN_SYNC"; run: PostRun; state?: PostRunStatus; targetIndex?: number }
-  | { type: "FB_STATUS"; runId: string; state: PostRunStatus; nextInSec?: number; currentTargetId?: string; targets?: PostTarget[] };
+  | { type: "FB_STATUS"; runId: string; state: PostRunStatus; nextInSec?: number; currentTargetId?: string; targets?: PostTarget[] }
+  | { type: "SOSMED_LEADS"; jobId: string; found: number; leads: SosmedLead[] };
 
 export type FbGroup = {
   id: string;
@@ -182,4 +183,42 @@ export type LeadJob = {
   found: number;
   sample?: string;
   leads: Lead[];
+};
+
+export type SosmedPlatform =
+  | "instagram"
+  | "facebook"
+  | "tiktok"
+  | "linkedin"
+  | "twitter"
+  | "youtube";
+
+export type SosmedLead = {
+  title: string;
+  url: string;
+  snippet: string;
+  phone?: string;
+  email?: string;
+  platform: SosmedPlatform;
+};
+
+export type SosmedContactFilter = "wa" | "email" | "any" | "all";
+
+export type SosmedJob = {
+  id: string;
+  userId?: string;
+  keyword: string;
+  platform: SosmedPlatform;
+  location: string;
+  extraTerm?: string;
+  contactFilter?: SosmedContactFilter;
+  query: string;
+  url: string;
+  maxResults: number;
+  startedAt: number;
+  finishedAt?: number;
+  status: JobStatus;
+  error?: string;
+  found: number;
+  leads: SosmedLead[];
 };
