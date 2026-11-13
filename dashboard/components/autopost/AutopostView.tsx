@@ -422,16 +422,6 @@ export default function AutopostView({
         Autopost grup Facebook
       </h1>
 
-      {/* PERINGATAN PERMANEN KEAMANAN AKUN */}
-      <div className="note warn" style={{ marginBottom: "20px", lineHeight: 1.5 }}>
-        <strong>PERINGATAN PENTING & PANDUAN KEAMANAN AKUN:</strong>
-        <br />
-        Pengiriman postingan ke banyak grup Facebook membawa risiko pembatasan (checkpoint) atau blokir akun oleh
-        Facebook bila dilakukan terlalu cepat atau berlebihan. Gunakan jeda wajar (minimal 30 detik atau lebih), batas
-        harian aman (maksimal 40 postingan per 24 jam), dan disarankan menguji alur dengan{" "}
-        <strong>Mode Uji (Dry Run)</strong> terlebih dahulu. Jangan gunakan akun pribadi utama yang sangat penting.
-      </div>
-
       {/* SUB-NAVIGASI / TABS */}
       <nav aria-label="Sub menu autopost" style={{ marginBottom: "20px" }}>
         <ul className="tabs" style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", gap: "6px" }}>

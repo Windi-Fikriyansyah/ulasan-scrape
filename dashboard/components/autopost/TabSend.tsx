@@ -277,7 +277,7 @@ export default function TabSend({
               style={{ width: "18px", height: "18px", cursor: "pointer" }}
             />
             <label htmlFor="dryModeCheck" style={{ cursor: "pointer", fontWeight: 700 }}>
-              Mode Uji (Dry Run) — Verifikasi alur tanpa memposting nyata ke grup Facebook (Direkomendasikan)
+              Mode Uji (Dry Run) — Verifikasi alur tanpa memposting nyata ke grup Facebook
             </label>
           </div>
 
@@ -350,8 +350,8 @@ export default function TabSend({
                       {activeRun.state === "paused"
                         ? "Proses Dijeda"
                         : activeCountdown != null && activeCountdown > 0
-                        ? `Jeda acak: grup berikutnya dalam ${activeCountdown} detik...`
-                        : "Sedang memproses grup..."}
+                          ? `Jeda acak: grup berikutnya dalam ${activeCountdown} detik...`
+                          : "Sedang memproses grup..."}
                     </span>
                   </div>
                   <div className="track" style={{ height: "12px" }}>
@@ -380,21 +380,21 @@ export default function TabSend({
                     t.status === "success"
                       ? "Berhasil"
                       : t.status === "failed"
-                      ? "Gagal"
-                      : t.status === "posting"
-                      ? "Memproses..."
-                      : t.status === "skipped"
-                      ? "Dilewati"
-                      : "Menunggu";
+                        ? "Gagal"
+                        : t.status === "posting"
+                          ? "Memproses..."
+                          : t.status === "skipped"
+                            ? "Dilewati"
+                            : "Menunggu";
 
                   const statusColor =
                     t.status === "success"
                       ? "var(--ink)"
                       : t.status === "failed"
-                      ? "var(--red)"
-                      : t.status === "posting"
-                      ? "var(--ink-soft)"
-                      : undefined;
+                        ? "var(--red)"
+                        : t.status === "posting"
+                          ? "var(--ink-soft)"
+                          : undefined;
 
                   return (
                     <tr key={t.id}>
@@ -595,17 +595,17 @@ export default function TabSend({
                                 t.status === "success"
                                   ? "var(--ink)"
                                   : t.status === "failed"
-                                  ? "var(--red)"
-                                  : undefined,
+                                    ? "var(--red)"
+                                    : undefined,
                             }}
                           >
                             {t.status === "success"
                               ? "Berhasil"
                               : t.status === "failed"
-                              ? "Gagal"
-                              : t.status === "skipped"
-                              ? "Dilewati"
-                              : t.status}
+                                ? "Gagal"
+                                : t.status === "skipped"
+                                  ? "Dilewati"
+                                  : t.status}
                           </td>
                           <td className="small">{t.message || "-"}</td>
                           <td className="small muted">

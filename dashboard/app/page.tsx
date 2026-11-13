@@ -295,12 +295,36 @@ export default function Home() {
       .catch((err) => console.error("Gagal memuat lead maps dari Postgres:", err))
       .finally(() => setLeadLoaded(true));
 
-    // Periksa apakah ada data lama di IndexedDB (browser) untuk ditawarkan impor jika belum pernah diimpor
-    const legacyDone = typeof localStorage !== "undefined" && localStorage.getItem("ulasan-tokped:legacy-import-done");
+    // Periksa apakah ada data lama di IndexedDB (browser) dan otomatis impor ke PostgreSQL
+    const legacyDone =
+      typeof localStorage !== "undefined" &&
+      (localStorage.getItem("reach-leads:legacy-import-done") ||
+        localStorage.getItem("ulasan-tokped:legacy-import-done"));
+
     if (!legacyDone) {
       Promise.all([listJobs().catch(() => []), listLeadJobs().catch(() => [])]).then(([oldJobs, oldLeads]) => {
         if (oldJobs.length > 0 || oldLeads.length > 0) {
-          setLegacyDataCount({ jobs: oldJobs.length, leads: oldLeads.length });
+          // Otomatis sinkronkan data ke PostgreSQL tanpa harus klik manual
+          setImporting(true);
+          importFromIndexedDb(oldJobs, oldLeads)
+            .then(async () => {
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem("reach-leads:legacy-import-done", "1");
+                localStorage.setItem("ulasan-tokped:legacy-import-done", "1");
+              }
+              const [newJobs, newLeads] = await Promise.all([fetchJobs(), fetchLeadJobs()]);
+              commit(newJobs);
+              commitLead(newLeads);
+              setLegacyDataCount(null);
+            })
+            .catch((err) => {
+              console.warn("Gagal otomatis sinkronisasi data IndexedDB ke Postgres:", err);
+              // Tampilkan fallback banner jika sinkronisasi otomatis terkendala
+              setLegacyDataCount({ jobs: oldJobs.length, leads: oldLeads.length });
+            })
+            .finally(() => {
+              setImporting(false);
+            });
         }
       });
     }
@@ -557,7 +581,22 @@ export default function Home() {
           </div>
         )}
 
-        {legacyDataCount && (legacyDataCount.jobs > 0 || legacyDataCount.leads > 0) && (
+        {importing && (
+          <div
+            className="note"
+            style={{
+              marginTop: "20px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <span className="live">Otomatis</span>
+            <span>Sedang menyinkronkan data lama dari penyimpanan browser (IndexedDB) ke database PostgreSQL...</span>
+          </div>
+        )}
+
+        {!importing && legacyDataCount && (legacyDataCount.jobs > 0 || legacyDataCount.leads > 0) && (
           <div
             className="note"
             style={{
@@ -570,7 +609,7 @@ export default function Home() {
             }}
           >
             <span>
-              Ditemukan data lama di penyimpanan browser (IndexedDB): {legacyDataCount.jobs} riwayat ulasan dan{" "}
+              Ditemukan data di penyimpanan browser (IndexedDB): {legacyDataCount.jobs} riwayat ulasan dan{" "}
               {legacyDataCount.leads} riwayat lead maps.
             </span>
             <button type="button" className="btn solid" disabled={importing} onClick={handleImportLegacy}>
