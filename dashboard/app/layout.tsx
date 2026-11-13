@@ -1,6 +1,11 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata = {
   title: "Reach Leads",
   description: "Platform pencarian leads dan otomasi prospecting bisnis terpadu.",
