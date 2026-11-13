@@ -120,6 +120,141 @@ const csvCell = (v: unknown) => {
   return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+const xmlEscape = (v: unknown): string => {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+};
+
+export function leadsToExcel(job: LeadJob): string {
+  const header: string[] = ["Nama Tempat"];
+  for (const f of job.fields) {
+    if (f === "koordinat") {
+      header.push("Latitude", "Longitude");
+    } else {
+      header.push(
+        f === "kategori"
+          ? "Kategori"
+          : f === "alamat"
+            ? "Alamat"
+            : f === "telepon"
+              ? "Telepon"
+              : f === "website"
+                ? "Website"
+                : f === "rating"
+                  ? "Rating"
+                  : f === "jumlah_ulasan"
+                    ? "Jumlah Ulasan"
+                    : f === "jam_buka"
+                      ? "Jam Buka"
+                      : f === "link_maps"
+                        ? "Link Google Maps"
+                        : f === "status"
+                          ? "Status Operasional"
+                          : f
+      );
+    }
+  }
+
+  const headerCells = header
+    .map((h) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${xmlEscape(h)}</Data></Cell>`)
+    .join("");
+
+  const dataRows = job.leads
+    .map((l) => {
+      const cells: string[] = [`<Cell><Data ss:Type="String">${xmlEscape(l.name)}</Data></Cell>`];
+
+      for (const f of job.fields) {
+        switch (f) {
+          case "kategori":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.category ?? "")}</Data></Cell>`);
+            break;
+          case "alamat":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.address ?? "")}</Data></Cell>`);
+            break;
+          case "telepon":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.phone ?? "")}</Data></Cell>`);
+            break;
+          case "website":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.website ?? "")}</Data></Cell>`);
+            break;
+          case "rating":
+            if (l.rating !== undefined && l.rating !== null && !isNaN(Number(l.rating))) {
+              cells.push(`<Cell><Data ss:Type="Number">${Number(l.rating)}</Data></Cell>`);
+            } else {
+              cells.push(`<Cell><Data ss:Type="String"></Data></Cell>`);
+            }
+            break;
+          case "jumlah_ulasan":
+            if (l.reviews !== undefined && l.reviews !== null && !isNaN(Number(l.reviews))) {
+              cells.push(`<Cell><Data ss:Type="Number">${Number(l.reviews)}</Data></Cell>`);
+            } else {
+              cells.push(`<Cell><Data ss:Type="String"></Data></Cell>`);
+            }
+            break;
+          case "jam_buka":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.hours ?? "")}</Data></Cell>`);
+            break;
+          case "koordinat":
+            if (l.lat !== undefined && l.lat !== null && !isNaN(Number(l.lat))) {
+              cells.push(`<Cell><Data ss:Type="Number">${Number(l.lat)}</Data></Cell>`);
+            } else {
+              cells.push(`<Cell><Data ss:Type="String"></Data></Cell>`);
+            }
+            if (l.lng !== undefined && l.lng !== null && !isNaN(Number(l.lng))) {
+              cells.push(`<Cell><Data ss:Type="Number">${Number(l.lng)}</Data></Cell>`);
+            } else {
+              cells.push(`<Cell><Data ss:Type="String"></Data></Cell>`);
+            }
+            break;
+          case "link_maps":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.mapsUrl ?? "")}</Data></Cell>`);
+            break;
+          case "status":
+            cells.push(`<Cell><Data ss:Type="String">${xmlEscape(l.status ?? "")}</Data></Cell>`);
+            break;
+        }
+      }
+
+      return `<Row>${cells.join("")}</Row>`;
+    })
+    .join("\n   ");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#172B4D" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Leads">
+  <Table>
+   <Row ss:Height="24">
+    ${headerCells}
+   </Row>
+   ${dataRows}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+}
+
 export function leadsToCsv(job: LeadJob): string {
   const header: string[] = ["nama"];
   for (const f of job.fields) {

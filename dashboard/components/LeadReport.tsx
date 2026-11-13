@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import type { LeadJob } from "@/lib/types";
 import { dateTime, download, fileSlug, nf0 } from "@/lib/analysis";
-import { filterLeads, leadsToCsv, summarizeLeads, type LeadSortKey } from "@/lib/leads";
+import { filterLeads, leadsToExcel, leadsToCsv, summarizeLeads, type LeadSortKey } from "@/lib/leads";
 
 const STEP = 50;
 
@@ -169,10 +169,14 @@ export default function LeadReport({ job, onDelete }: { job: LeadJob; onDelete: 
             className="btn"
             disabled={!job.leads.length}
             onClick={() =>
-              download(`${fileSlug(job.keyword + "-" + job.location)}.csv`, leadsToCsv(job), "text/csv;charset=utf-8")
+              download(
+                `${fileSlug(job.keyword + "-" + job.location)}.xls`,
+                leadsToExcel(job),
+                "application/vnd.ms-excel;charset=utf-8"
+              )
             }
           >
-            Unduh CSV
+            Unduh Excel
           </button>
           <button
             type="button"
