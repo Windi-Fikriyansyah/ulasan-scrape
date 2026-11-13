@@ -8,6 +8,7 @@ const nextConfig = {
       { source: "/sosmed", destination: "/" },
       { source: "/autopost", destination: "/" },
       { source: "/akun", destination: "/" },
+      { source: "/extension", destination: "/" },
     ];
   },
 };

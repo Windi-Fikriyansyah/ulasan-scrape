@@ -10,6 +10,7 @@ export const MENUS = [
   { id: "sosmed", label: "Scrape sosmed" },
   { id: "autopost", label: "Autopost grup" },
   { id: "akun", label: "Akun" },
+  { id: "extension", label: "Unduh ekstensi" },
 ] as const;
 export type MenuId = (typeof MENUS)[number]["id"];
 

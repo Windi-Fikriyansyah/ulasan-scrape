@@ -29,6 +29,7 @@ import LeadReport from "@/components/LeadReport";
 import AutopostView from "@/components/autopost/AutopostView";
 import AccountView from "@/components/AccountView";
 import SosmedView from "@/components/sosmed/SosmedView";
+import ExtensionView from "@/components/ExtensionView";
 
 const marketOf = (j: Job): Market => j.market ?? "tokopedia";
 const ERR_DISCONNECTED = "Koneksi ke extension terputus. Muat ulang dashboard, lalu coba lagi.";
@@ -330,22 +331,23 @@ export default function Home() {
     }
   }, []);
 
-  // Sinkronisasi menu aktif dari URL slug (/lead, /autopost, /akun) atau parameter URL
+  // Sinkronisasi menu aktif dari URL slug (/lead, /sosmed, /autopost, /akun, /extension) atau parameter URL
   useEffect(() => {
     const syncFromUrl = () => {
       if (typeof window === "undefined") return;
+      const validMenus: MenuId[] = ["ambil", "lead", "sosmed", "autopost", "akun", "extension"];
       const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
-      if (path === "lead" || path === "autopost" || path === "akun" || path === "ambil") {
+      if (validMenus.includes(path as MenuId)) {
         setMenu(path as MenuId);
         return;
       }
       const param = new URLSearchParams(window.location.search).get("menu");
-      if (param === "lead" || param === "autopost" || param === "akun" || param === "ambil") {
+      if (param && validMenus.includes(param as MenuId)) {
         setMenu(param as MenuId);
         return;
       }
       const hash = window.location.hash.replace(/^#/, "");
-      if (hash === "lead" || hash === "autopost" || hash === "akun" || hash === "ambil") {
+      if (hash && validMenus.includes(hash as MenuId)) {
         setMenu(hash as MenuId);
         return;
       }
@@ -747,6 +749,10 @@ export default function Home() {
 
         {menu === "akun" && (
           <AccountView user={user} superuserWarning={superuserWarning} />
+        )}
+
+        {menu === "extension" && (
+          <ExtensionView status={ext.status} version={ext.version} />
         )}
       </div>
     </div>
