@@ -221,9 +221,9 @@ export default function SosmedCapture({
           ))}
         </div>
 
-        <p className="hint" style={{ margin: 0, fontFamily: "monospace", fontSize: "12px", color: "var(--ink)" }}>
+        {/* <p className="hint" style={{ margin: 0, fontFamily: "monospace", fontSize: "12px", color: "var(--ink)" }}>
           <b>Google Dork:</b> <code>{previewQuery}</code>
-        </p>
+        </p> */}
       </div>
 
       {error && (
