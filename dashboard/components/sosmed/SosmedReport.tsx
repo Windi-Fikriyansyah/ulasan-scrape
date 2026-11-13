@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { SosmedJob } from "@/lib/types";
 import { dateTime, download, fileSlug, nf0 } from "@/lib/analysis";
-import { filterSosmedLeads, SOSMED_PLATFORMS, sosmedLeadsToCsv, summarizeSosmedLeads } from "@/lib/sosmed";
+import { filterSosmedLeads, SOSMED_PLATFORMS, sosmedLeadsToExcel, sosmedLeadsToCsv, summarizeSosmedLeads } from "@/lib/sosmed";
 
 type Props = {
   job: SosmedJob;
@@ -61,10 +61,10 @@ export default function SosmedReport({ job, onDelete }: Props) {
   const summaryText = useMemo(() => summarizeSosmedLeads(job), [job]);
   const platformLabel = SOSMED_PLATFORMS.find((p) => p.id === job.platform)?.label || job.platform;
 
-  const handleExportCsv = () => {
-    const csv = sosmedLeadsToCsv(job);
-    const filename = `sosmed-${job.platform}-${fileSlug(job.keyword)}-${fileSlug(job.location)}.csv`;
-    download(csv, filename, "text/csv;charset=utf-8;");
+  const handleExportExcel = () => {
+    const excelXml = sosmedLeadsToExcel(job);
+    const filename = `sosmed-${job.platform}-${fileSlug(job.keyword)}-${fileSlug(job.location)}.xls`;
+    download(excelXml, filename, "application/vnd.ms-excel;charset=utf-8");
   };
 
   const handleCopyPhones = () => {
@@ -122,10 +122,10 @@ export default function SosmedReport({ job, onDelete }: Props) {
           <button
             type="button"
             className="btn small"
-            onClick={handleExportCsv}
+            onClick={handleExportExcel}
             disabled={job.leads.length === 0}
           >
-            Ekspor CSV
+            Unduh Excel
           </button>
           {!running && (
             <button

@@ -231,6 +231,92 @@ const csvCell = (v: unknown): string => {
   return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+const xmlEscape = (v: unknown): string => {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+};
+
+export function sosmedLeadsToExcel(job: SosmedJob): string {
+  const header = [
+    "No",
+    "Judul / Profil",
+    "WhatsApp / Telepon",
+    "Email",
+    "Platform",
+    "Tautan",
+    "Cuplikan Snippet",
+    "Kata Kunci",
+    "Lokasi",
+    "Dork Query",
+  ];
+
+  const headerCells = header
+    .map((h) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${xmlEscape(h)}</Data></Cell>`)
+    .join("");
+
+  const dataRows = job.leads
+    .map((item, idx) => {
+      const noCell = `<Cell><Data ss:Type="Number">${idx + 1}</Data></Cell>`;
+      const titleCell = `<Cell><Data ss:Type="String">${xmlEscape(item.title)}</Data></Cell>`;
+      const phoneCell = `<Cell><Data ss:Type="String">${xmlEscape(item.phone || "")}</Data></Cell>`;
+      const emailCell = `<Cell><Data ss:Type="String">${xmlEscape(item.email || "")}</Data></Cell>`;
+      const platformCell = `<Cell><Data ss:Type="String">${xmlEscape(item.platform)}</Data></Cell>`;
+      const urlCell = `<Cell><Data ss:Type="String">${xmlEscape(item.url)}</Data></Cell>`;
+      const snippetCell = `<Cell><Data ss:Type="String">${xmlEscape(item.snippet)}</Data></Cell>`;
+      const keywordCell = `<Cell><Data ss:Type="String">${xmlEscape(job.keyword)}</Data></Cell>`;
+      const locationCell = `<Cell><Data ss:Type="String">${xmlEscape(job.location)}</Data></Cell>`;
+      const queryCell = `<Cell><Data ss:Type="String">${xmlEscape(job.query)}</Data></Cell>`;
+
+      return `<Row>${noCell}${titleCell}${phoneCell}${emailCell}${platformCell}${urlCell}${snippetCell}${keywordCell}${locationCell}${queryCell}</Row>`;
+    })
+    .join("\n   ");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#172B4D" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Social Media Leads">
+  <Table>
+   <Column ss:Width="45"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="220"/>
+   <Column ss:Width="280"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="220"/>
+   <Row ss:Height="24">
+    ${headerCells}
+   </Row>
+   ${dataRows}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+}
+
 export function sosmedLeadsToCsv(job: SosmedJob): string {
   const header = [
     "No",

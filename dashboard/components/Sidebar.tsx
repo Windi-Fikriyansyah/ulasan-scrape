@@ -33,8 +33,8 @@ export default function Sidebar({ menu, onMenu, status, version, dbStatus, user,
 
   const dbText = dbStatus
     ? dbStatus.ok
-      ? "Database PostgreSQL terhubung"
-      : dbStatus.error || "PostgreSQL belum terhubung"
+      ? "Database terhubung"
+      : dbStatus.error || "Database belum terhubung"
     : "Memeriksa database";
 
   const dbClass = dbStatus ? (dbStatus.ok ? "connected" : "missing") : "checking";
