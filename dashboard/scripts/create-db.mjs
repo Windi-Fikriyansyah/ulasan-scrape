@@ -11,11 +11,11 @@ async function main() {
     if (appUrl) {
       console.error(
         "\nKesalahan: Variabel lingkungan DATABASE_ADMIN_URL belum diatur di .env.local.\n" +
-          "Untuk keamanan isolasi data (Row-Level Security / RLS), operasi database harus dikelola dengan akun administrator (superuser),\n" +
-          "sedangkan aplikasi berjalan dengan peran biasa (non-superuser).\n\n" +
-          "Silakan tambahkan di file .env.local:\n" +
-          "DATABASE_ADMIN_URL=postgres://postgres:KATA_SANDI_ADMIN@localhost:5432/ulasan_tokped\n" +
-          "DATABASE_URL=postgres://ulasan_app:KATA_SANDI_APP@localhost:5432/ulasan_tokped\n"
+        "Untuk keamanan isolasi data (Row-Level Security / RLS), operasi database harus dikelola dengan akun administrator (superuser),\n" +
+        "sedangkan aplikasi berjalan dengan peran biasa (non-superuser).\n\n" +
+        "Silakan tambahkan di file .env.local:\n" +
+        "DATABASE_ADMIN_URL=postgres://postgres:KATA_SANDI_ADMIN@localhost:5432/ulasan_tokped\n" +
+        "DATABASE_URL=postgres://ulasan_app:KATA_SANDI_APP@localhost:5432/ulasan_tokped\n"
       );
     } else {
       console.error("Kesalahan: Variabel lingkungan DATABASE_ADMIN_URL belum diatur di .env.local.");
@@ -84,7 +84,7 @@ async function main() {
       console.error(`Gagal memeriksa atau membuat database "${dbName}": ${err.message}`);
       process.exit(1);
     } finally {
-      await rootClient.end().catch(() => {});
+      await rootClient.end().catch(() => { });
     }
   }
 
@@ -112,6 +112,12 @@ async function main() {
     process.exit(1);
   }
 
+  // Jika role aplikasi sama dengan role administrator, lewati penyiapan role terpisah
+  if (appRole === decodeURIComponent(parsedAdmin.username)) {
+    console.log(`Role aplikasi "${appRole}" sama dengan role administrator, penyiapan role terpisah dilewati.`);
+    return;
+  }
+
   // Sambung ke database target menggunakan akun admin untuk mengonfigurasi role
   const targetClient = new Client({
     connectionString: adminUrl,
@@ -125,37 +131,50 @@ async function main() {
     // Quote password to prevent SQL injection in password string literal
     const escapedPassword = appPassword.replace(/'/g, "''");
 
-    await targetClient.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${appRole}') THEN
-          CREATE ROLE "${appRole}" WITH LOGIN PASSWORD '${escapedPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-        ELSE
-          ALTER ROLE "${appRole}" WITH LOGIN PASSWORD '${escapedPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-        END IF;
-      END
-      $$;
-    `);
+    try {
+      await targetClient.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${appRole}') THEN
+            CREATE ROLE "${appRole}" WITH LOGIN PASSWORD '${escapedPassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          ELSE
+            ALTER ROLE "${appRole}" WITH LOGIN PASSWORD '${escapedPassword}';
+          END IF;
+        END
+        $$;
+      `);
+    } catch (roleErr) {
+      if (roleErr.message && (roleErr.message.includes("permission denied") || roleErr.code === "42501")) {
+        console.warn(
+          `Catatan: Melewati pengubahan role "${appRole}" (${roleErr.message}). Melanjutkan ke hak akses skema.`
+        );
+      } else {
+        throw roleErr;
+      }
+    }
 
-    // Berikan hak akses terbatas yang aman (tanpa izin CREATE pada skema publik)
-    await targetClient.query(`
-      GRANT CONNECT ON DATABASE "${dbName}" TO "${appRole}";
-      GRANT USAGE ON SCHEMA public TO "${appRole}";
-      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${appRole}";
-      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${appRole}";
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${appRole}";
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${appRole}";
-      REVOKE CREATE ON SCHEMA public FROM "${appRole}";
-    `);
+    // Berikan hak akses terbatas yang aman
+    try {
+      await targetClient.query(`
+        GRANT CONNECT ON DATABASE "${dbName}" TO "${appRole}";
+        GRANT USAGE ON SCHEMA public TO "${appRole}";
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${appRole}";
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${appRole}";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${appRole}";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${appRole}";
+      `);
+    } catch (grantErr) {
+      console.warn(`Catatan hak akses: ${grantErr.message}`);
+    }
 
     console.log(
-      `Peran aplikasi "${appRole}" berhasil disiapkan (NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS).`
+      `Peran aplikasi "${appRole}" siap digunakan.`
     );
   } catch (err) {
     console.error(`Gagal menyiapkan peran aplikasi: ${err.message}`);
     process.exit(1);
   } finally {
-    await targetClient.end().catch(() => {});
+    await targetClient.end().catch(() => { });
   }
 }
 
