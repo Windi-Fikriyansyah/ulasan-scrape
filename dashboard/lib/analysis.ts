@@ -85,6 +85,77 @@ const csvCell = (v: unknown) => {
   return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+const xmlEscape = (v: unknown): string => {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+};
+
+export function toExcel(job: Job): string {
+  const head = ["Rating", "Nama Pembeli", "Foto Profil", "Tanggal", "Varian", "Ulasan", "Foto Produk", "Balasan Penjual"];
+
+  const headerCells = head
+    .map((h) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${xmlEscape(h)}</Data></Cell>`)
+    .join("");
+
+  const dataRows = job.reviews
+    .map((r) => {
+      const ratingCell = `<Cell><Data ss:Type="Number">${Number(r.rating) || 0}</Data></Cell>`;
+      const nameCell = `<Cell><Data ss:Type="String">${xmlEscape(r.name)}</Data></Cell>`;
+      const avatarCell = `<Cell><Data ss:Type="String">${xmlEscape(r.avatar ?? "")}</Data></Cell>`;
+      const dateCell = `<Cell><Data ss:Type="String">${xmlEscape(r.date)}</Data></Cell>`;
+      const variantCell = `<Cell><Data ss:Type="String">${xmlEscape(r.variant ?? "")}</Data></Cell>`;
+      const reviewCell = `<Cell><Data ss:Type="String">${xmlEscape(r.review ?? "")}</Data></Cell>`;
+      const imagesCell = `<Cell><Data ss:Type="String">${xmlEscape((r.images || []).join(" | "))}</Data></Cell>`;
+      const replyCell = `<Cell><Data ss:Type="String">${xmlEscape(r.seller_reply ?? "")}</Data></Cell>`;
+
+      return `<Row>${ratingCell}${nameCell}${avatarCell}${dateCell}${variantCell}${reviewCell}${imagesCell}${replyCell}</Row>`;
+    })
+    .join("\n   ");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#172B4D" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Ulasan">
+  <Table>
+   <Column ss:Width="50"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="300"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="250"/>
+   <Row ss:Height="24">
+    ${headerCells}
+   </Row>
+   ${dataRows}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+}
+
 export function toCsv(job: Job): string {
   const head = ["rating", "nama", "foto_profil", "tanggal", "varian", "ulasan", "foto", "balasan_penjual"];
   const rows = job.reviews.map((r) =>

@@ -10,6 +10,7 @@ import {
   lede,
   nf0,
   summarize,
+  toExcel,
   toCsv,
   type SortKey,
 } from "@/lib/analysis";
@@ -197,9 +198,11 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
             type="button"
             className="btn"
             disabled={!job.reviews.length}
-            onClick={() => download(`${fileSlug(job.title)}.csv`, toCsv(job), "text/csv;charset=utf-8")}
+            onClick={() =>
+              download(`${fileSlug(job.title)}.xls`, toExcel(job), "application/vnd.ms-excel;charset=utf-8")
+            }
           >
-            Unduh CSV
+            Unduh Excel
           </button>
           <button
             type="button"
