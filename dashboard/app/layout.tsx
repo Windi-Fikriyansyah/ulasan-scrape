@@ -4,6 +4,9 @@ import type { ReactNode } from "react";
 export const metadata = {
   title: "Reach Leads",
   description: "Platform pencarian leads dan otomasi prospecting bisnis terpadu.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

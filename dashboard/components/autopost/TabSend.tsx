@@ -51,7 +51,7 @@ export default function TabSend({
   const [delayMin, setDelayMin] = useState<number>(60);
   const [delayMax, setDelayMax] = useState<number>(150);
   const [dailyLimit, setDailyLimit] = useState<number>(15);
-  const [dryMode, setDryMode] = useState<boolean>(true); // DEFAULT ON
+  const [dryMode, setDryMode] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
@@ -257,12 +257,12 @@ export default function TabSend({
             </div>
           </div>
 
-          {/* Opsi Mode Uji (Dry Run) - Default ON */}
+          {/* Opsi Mode Uji (Dry Run) */}
           <div
             style={{
               marginTop: "16px",
               padding: "12px 14px",
-              background: dryMode ? "rgba(245, 197, 24, 0.15)" : "rgba(201, 58, 36, 0.08)",
+              background: dryMode ? "rgba(245, 197, 24, 0.15)" : "rgba(23, 43, 77, 0.04)",
               border: "1px solid var(--ink)",
               display: "flex",
               alignItems: "center",
