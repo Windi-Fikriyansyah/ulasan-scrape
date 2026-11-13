@@ -14,7 +14,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const isAuthPage = pathname === "/login" || pathname === "/register";
+  // Jika membuka URL /register yang sudah dihapus, alihkan ke /login
+  if (pathname === "/register") {
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    return NextResponse.redirect(loginUrl);
+  }
+
+  const isAuthPage = pathname === "/login";
 
   if (!sessionToken && !isAuthPage) {
     const loginUrl = req.nextUrl.clone();

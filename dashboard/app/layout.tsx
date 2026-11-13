@@ -2,8 +2,8 @@ import "./globals.css";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "Ulasan Tokped",
-  description: "Ambil dan baca ulasan produk Tokopedia dari satu dashboard.",
+  title: "Reach Leads",
+  description: "Platform pencarian leads dan otomasi prospecting bisnis terpadu.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

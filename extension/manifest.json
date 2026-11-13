@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ulasan Tokped Bridge",
+  "name": "Reach Leads Bridge",
   "version": "2.0.0",
-  "description": "Pasang sekali. Semua kendali pengambilan ulasan Tokopedia ada di dashboard web.",
+  "description": "Ekstensi pendamping Reach Leads untuk pengambilan data otomatis langsung dari dashboard web.",
   "permissions": [
     "storage",
     "tabs",
@@ -24,7 +24,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Buka dashboard Ulasan Tokped"
+    "default_title": "Buka dashboard Reach Leads"
   },
   "content_scripts": [
     {

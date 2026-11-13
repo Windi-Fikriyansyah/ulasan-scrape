@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setBridgeUser } from "@/lib/bridge";
 
@@ -50,12 +49,12 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="sheet auth-card">
         <div style={{ marginBottom: 20 }}>
-          <span className="mark">ULASAN TOKPED</span>
+          <span className="mark">REACH LEADS</span>
         </div>
 
         <h1 style={{ fontSize: 32, marginBottom: 12 }}>Masuk ke Akun</h1>
         <p className="muted small" style={{ marginBottom: 24 }}>
-          Masukkan email dan kata sandi Anda untuk mengakses dashboard ulasan.
+          Masukkan email dan kata sandi Anda untuk mengakses dashboard Reach Leads.
         </p>
 
         {error && (
@@ -104,13 +103,6 @@ export default function LoginPage() {
             {loading ? "Memverifikasi..." : "Masuk"}
           </button>
         </form>
-
-        <div className="auth-switch">
-          Belum punya akun?{" "}
-          <Link href="/register" style={{ fontWeight: 700 }}>
-            Daftar di sini
-          </Link>
-        </div>
       </div>
     </div>
   );

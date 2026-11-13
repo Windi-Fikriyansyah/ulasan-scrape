@@ -41,7 +41,7 @@ export default function Sidebar({ menu, onMenu, status, version, dbStatus, user,
 
   return (
     <aside className="side">
-      <span className="mark">Ulasan Tokped</span>
+      <span className="mark">Reach Leads</span>
 
       <nav aria-label="Menu utama">
         <ul className="nav">
