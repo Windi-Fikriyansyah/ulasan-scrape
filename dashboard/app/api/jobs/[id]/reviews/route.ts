@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { withAuth, dedupeKeyReview } from "@/lib/server/guard";
 import { withUser } from "@/lib/server/pg";
+import { processReviewImages, saveImageToDisk } from "@/lib/server/media-storage";
 import type { Review } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -50,16 +51,20 @@ export async function POST(req: NextRequest, { params }: Context) {
         let pIdx = 1;
 
         for (const r of reviews) {
+          // Simpan fisik file gambar ulasan & avatar ke disk lokal server
+          const localImages = Array.isArray(r.images) && r.images.length > 0
+            ? await processReviewImages(r.images, jobId)
+            : [];
+          const localAvatar = r.avatar ? await saveImageToDisk(r.avatar, jobId) : "";
+
           const dedupeKey = dedupeKeyReview(r);
           const name = String(r.name || "").slice(0, 300);
-          const avatar = String(r.avatar || "").slice(0, 2000);
+          const avatar = String(localAvatar || r.avatar || "").slice(0, 2000);
           const rating = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
           const dateText = String(r.date || "").slice(0, 100);
           const variant = String(r.variant || "").slice(0, 300);
           const reviewText = String(r.review || "").slice(0, 20000);
-          const imagesJson = JSON.stringify(
-            Array.isArray(r.images) ? r.images.map((s) => String(s).slice(0, 2000)) : []
-          );
+          const imagesJson = JSON.stringify(localImages.length > 0 ? localImages : (Array.isArray(r.images) ? r.images : []));
           const sellerReply = String(r.seller_reply || "").slice(0, 10000);
 
           valuePlaceholders.push(

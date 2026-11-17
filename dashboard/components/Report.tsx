@@ -26,10 +26,13 @@ function Avatar({ src, name }: { src?: string; name: string }) {
       </span>
     );
   }
+  const finalSrc = src.startsWith("http")
+    ? `/api/proxy-image?url=${encodeURIComponent(src)}`
+    : src;
   return (
     <img
       className="avatar"
-      src={src}
+      src={finalSrc}
       alt=""
       loading="lazy"
       referrerPolicy="no-referrer"
@@ -259,11 +262,21 @@ export default function Report({ job, onDelete }: { job: Job; onDelete: () => vo
                 {r.review ? <p>{r.review}</p> : <p className="muted">Tidak ada teks ulasan.</p>}
                 {r.images.length > 0 && (
                   <div className="thumbs">
-                    {r.images.map((src) => (
-                      <a key={src} href={src} target="_blank" rel="noreferrer">
-                        <img src={src} alt="Foto dari pembeli" loading="lazy" referrerPolicy="no-referrer" />
-                      </a>
-                    ))}
+                    {r.images.map((src) => {
+                      const finalSrc = src.startsWith("http")
+                        ? `/api/proxy-image?url=${encodeURIComponent(src)}`
+                        : src;
+                      return (
+                        <a key={src} href={finalSrc} target="_blank" rel="noreferrer">
+                          <img
+                            src={finalSrc}
+                            alt="Foto dari pembeli"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                          />
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
                 {r.seller_reply && (

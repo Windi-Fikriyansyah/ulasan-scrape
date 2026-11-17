@@ -12,7 +12,11 @@
   ],
   "host_permissions": [
     "https://www.tokopedia.com/*",
+    "https://*.tokopedia-static.net/*",
+    "https://images.tokopedia.net/*",
     "https://shopee.co.id/*",
+    "https://*.susercontent.com/*",
+    "https://down-id.img.susercontent.com/*",
     "https://www.google.com/maps/*",
     "https://www.google.com/search*",
     "https://www.google.co.id/search*",

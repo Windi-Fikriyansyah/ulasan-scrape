@@ -360,6 +360,36 @@
     return { title, image: og("og:image") };
   }
 
+  // Mengonversi URL gambar menjadi Data URL base64 langsung dari tab Tokopedia
+  // agar gambar langsung tersimpan dan tidak terpengaruh batas waktu tanda tangan (signed URL) atau 403
+  async function imgToDataUrl(url, timeoutMs = 4000) {
+    if (!url || typeof url !== "string" || url.startsWith("data:")) return url;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return url;
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : url);
+        reader.onerror = () => resolve(url);
+        reader.readAsDataURL(blob);
+      });
+    } catch (_) {
+      return url;
+    }
+  }
+
+  async function resolveReviewImages(reviews) {
+    for (const r of reviews) {
+      if (Array.isArray(r.images) && r.images.length > 0) {
+        r.images = await Promise.all(r.images.map((img) => imgToDataUrl(img)));
+      }
+    }
+  }
+
   async function run({ maxPages = 10, delay = 1200 }) {
     running = true;
     stopRequested = false;
@@ -384,6 +414,7 @@
           const k = keyOf(r);
           if (!seen.has(k)) { seen.add(k); fresh.push(r); }
         }
+        await resolveReviewImages(fresh);
         send({ type: "batch", page, reviews: fresh });
 
         const next = findNextButton();

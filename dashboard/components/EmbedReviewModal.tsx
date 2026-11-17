@@ -111,8 +111,25 @@ export default function EmbedReviewModal({ job, onClose }: Props) {
     const rRating = Math.max(1, Math.min(5, Math.round(r.rating || 5)));
     const starsHtml = [1, 2, 3, 4, 5].map((i) => makeStarSvg(i <= rRating)).join("");
 
-    const avatarHtml = r.avatar
-      ? `<img src="${escapeHtml(r.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="ut-avatar-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" style="width:40px;height:40px;border-radius:50%;object-fit:cover;display:block;"><div class="ut-avatar-fallback" style="display:none;width:40px;height:40px;border-radius:50%;background:#f1f5f9;color:#334155;font-weight:700;font-size:16px;align-items:center;justify-content:center;">${initial}</div>`
+    const toFullUrl = (s: string) => {
+      if (!s) return "";
+      if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("data:")) {
+        if (s.includes("tokopedia-static.net") || s.includes("images.tokopedia.net")) {
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          return `${origin}/api/proxy-image?url=${encodeURIComponent(s)}`;
+        }
+        return s;
+      }
+      if (s.startsWith("/")) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        return `${origin}${s}`;
+      }
+      return s;
+    };
+
+    const avatarUrl = toFullUrl(r.avatar || "");
+    const avatarHtml = avatarUrl
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="ut-avatar-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" style="width:40px;height:40px;border-radius:50%;object-fit:cover;display:block;"><div class="ut-avatar-fallback" style="display:none;width:40px;height:40px;border-radius:50%;background:#f1f5f9;color:#334155;font-weight:700;font-size:16px;align-items:center;justify-content:center;">${initial}</div>`
       : `<div class="ut-avatar-fallback" style="width:40px;height:40px;border-radius:50%;background:#f1f5f9;color:#334155;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;">${initial}</div>`;
 
     const verifiedHtml = showVerifiedBadge
@@ -132,10 +149,10 @@ export default function EmbedReviewModal({ job, onClose }: Props) {
     const photosHtml =
       r.images && r.images.length > 0
         ? `<div class="ut-gallery" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">${r.images
-            .map(
-              (img) =>
-                `<a href="${escapeHtml(img)}" target="_blank" rel="noreferrer" style="display:inline-block;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;line-height:0;"><img src="${escapeHtml(img)}" alt="Foto ulasan" loading="lazy" referrerpolicy="no-referrer" style="width:58px;height:58px;object-fit:cover;display:block;"></a>`
-            )
+            .map((img) => {
+              const fullImg = toFullUrl(img);
+              return `<a href="${escapeHtml(fullImg)}" target="_blank" rel="noreferrer" style="display:inline-block;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;line-height:0;"><img src="${escapeHtml(fullImg)}" alt="Foto ulasan" loading="lazy" referrerpolicy="no-referrer" style="width:58px;height:58px;object-fit:cover;display:block;"></a>`;
+            })
             .join("")}</div>`
         : "";
 
